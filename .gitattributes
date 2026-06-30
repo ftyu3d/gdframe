@@ -1,0 +1,5 @@
+# GDScript / scene text: LF only (engine rejects stray CR in .gd)
+*.gd text eol=lf
+*.gdshader text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
