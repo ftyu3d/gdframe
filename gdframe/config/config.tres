@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="GDFrameConfig" format=3 uid="uid://8a81jorx2fhr"]
+
+[ext_resource type="Script" uid="uid://cfyfbdmu5ccgb" path="res://addons/gdframe/config/config.gd" id="1_k04gi"]
+
+[resource]
+script = ExtResource("1_k04gi")
