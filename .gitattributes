@@ -1,0 +1,26 @@
+# Godot text files: force LF
+*.gd text eol=lf
+*.uid text eol=lf
+*.gdshader text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.cfg text eol=lf
+*.md text eol=lf
+
+# Release zip can stay in LFS
+*.zip filter=lfs diff=lfs merge=binary -text
+
+# Images: normal Git, NOT LFS
+*.png binary -diff
+*.jpg binary -diff
+*.svg text
+
+# Packaging scripts
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.bat text eol=lf
+
+# Asset Store download: only addons/
+/**            export-ignore
+/addons        !export-ignore
+/addons/**     !export-ignore
