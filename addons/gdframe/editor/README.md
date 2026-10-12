@@ -138,8 +138,9 @@ change_state(GDFrameConstants.RUN)  # GDFrameFSMState 子类内
 | 字段 | 默认 | 说明 |
 |------|------|------|
 | `max_fps_options` | `0, 30, 60, 120` | 帧率上限可选项；`0` 不限制，放在第一项。不在列表中的档案值按不限制处理 |
-| `min_window_size` | `1920×1080` | 窗口化分辨率下限。更小的不进列表；已存的更小尺寸回退为默认窗口大小 |
-| `window_size_scale_steps` | `0.9, 0.8, 0.75, 0.67, 0.5` | 相对可用区最大尺寸的缩放档。首项为新建档案默认缩放；空则用 `1` |
+| `default_display_mode` | `BORDERLESS` | 新建档案默认显示模式（检查器下拉）；Web 仅 `WINDOWED` / `BORDERLESS`，其余回退 `WINDOWED` |
+| `min_window_size` | `1920×1080` | 窗口化分辨率下限。可用区放得下该尺寸时，更小的不进列表，已存的更小尺寸回退为默认窗口大小；放不下时列表仍按缩放档生成 |
+| `window_size_scale_steps` | `0.9, 0.8, 0.75, 0.67, 0.5` | 相对可用区最大尺寸的缩放档；与最大适配尺寸一起构成推荐列表。空则仅最大适配尺寸 |
 | `common_window_heights` | `360 … 2160` | 常见窗口高度；宽度按当前宽高比换算，超出可用区的不列入 |
 
 **Save**
@@ -163,7 +164,7 @@ change_state(GDFrameConstants.RUN)  # GDFrameFSMState 子类内
 
 **Settings（运行时）**
 
-窗口化「分辨率」列表由 [code]settings.window_size_options()[/code] 运行时生成：以当前参考屏幕可用区域为上限，按 [code]window_size_scale_steps[/code] 与 [code]common_window_heights[/code] 去重。宽高比：项目 [code]stretch/aspect=expand[/code] 时跟屏幕；否则跟设计分辨率（[code]viewport_*[/code]）。项目 [code]stretch/mode=disabled[/code]，窗口化时所选尺寸就是渲染分辨率，画面按该尺寸 1:1 绘制。设置界面在窗口化时以实际窗口尺寸为准，未在预设中的尺寸显示为「自定义」，保存后写入档案。非窗口化时下拉锁定，只显示当前画面尺寸，不改窗口化分辨率；全屏、最大化时视口跟着当前窗口，回到窗口化再恢复所选分辨率。换屏不自动改写存档。桌面冷启动不写 [code]override.cfg[/code]：窗口保持项目里的无边框固定尺寸，直到游戏调用 [code]settings.apply_startup_window()[/code]：先把窗口改到档案中的尺寸，再关掉无边框标志。进入全屏前会先把窗口摆到档案中的窗口化尺寸，离开全屏时按该尺寸恢复。客户区不会写成与屏幕完全相同，避免 Windows 把窗口化误判为独占全屏。Web 导出只提供窗口化与无边框全屏，界面分别显示为「页面内」和「全屏」；新建档案与桌面相同，默认无边框全屏；最大化、独占全屏、分辨率、垂直同步不显示，也不读写、不调用对应引擎接口。帧率上限选项为 [code]max_fps_options[/code]（[code]Engine.max_fps[/code]，[code]0[/code] 不限制；不在列表中的档案值按不限制处理），桌面、Android 与 Web 都写入档案并生效；垂直同步在桌面与 Android 读写并生效，开启时实际帧率仍不会超过显示器刷新率。Android 不提供屏幕显示与分辨率：这两项不显示，不读写，也不调用窗口模式、尺寸与位置接口。浏览器全屏只能在玩家点击或按键时进入，启动阶段只记下选择，等下一次输入再申请。
+窗口化「分辨率」列表由 [code]settings.window_size_options()[/code] 运行时生成：推荐列表（最大适配尺寸 + [code]window_size_scale_steps[/code]）再并入 [code]common_window_heights[/code] 与设计分辨率后去重。新建档案默认显示模式为 [code]default_display_mode[/code]（默认无边框全屏）；默认窗口化分辨率取推荐列表第二档。可用区放得下 [code]min_window_size[/code] 时，更小的尺寸不列入；放不下时仍保留各缩放档。宽高比：项目 [code]stretch/aspect=expand[/code] 时跟屏幕；否则跟设计分辨率（[code]viewport_*[/code]）。项目 [code]stretch/mode=disabled[/code]，窗口化时所选尺寸就是渲染分辨率，画面按该尺寸 1:1 绘制。设置界面在窗口化时以实际窗口尺寸为准，未在预设中的尺寸显示为「自定义」，保存后写入档案。非窗口化时下拉锁定，只显示当前画面尺寸，不改窗口化分辨率；全屏、最大化时视口跟着当前窗口，回到窗口化再恢复所选分辨率。换屏不自动改写存档。桌面冷启动不写 [code]override.cfg[/code]：窗口保持项目里的无边框固定尺寸，直到游戏调用 [code]settings.apply_startup_window()[/code]：先把窗口改到档案中的尺寸，再关掉无边框标志。进入全屏前会先把窗口摆到档案中的窗口化尺寸，离开全屏时按该尺寸恢复。客户区不会写成与屏幕完全相同，避免 Windows 把窗口化误判为独占全屏。Web 导出只提供窗口化与无边框全屏，界面分别显示为「页面内」和「全屏」；新建档案与桌面相同，取 [code]default_display_mode[/code]；最大化、独占全屏、分辨率、垂直同步不显示，也不读写、不调用对应引擎接口。帧率上限选项为 [code]max_fps_options[/code]（[code]Engine.max_fps[/code]，[code]0[/code] 不限制；不在列表中的档案值按不限制处理），桌面、Android 与 Web 都写入档案并生效；垂直同步在桌面与 Android 读写并生效，开启时实际帧率仍不会超过显示器刷新率。Android 不提供屏幕显示与分辨率：这两项不显示，不读写，也不调用窗口模式、尺寸与位置接口。浏览器全屏只能在玩家点击或按键时进入，启动阶段只记下选择，等下一次输入再申请。
 
 语言列表来自 [code]TranslationServer.get_loaded_locales()[/code]（[code]project.godot[/code] → [code]locale/translations[/code]）。在 Dock **通用 → 初始化本地化 CSV** 可生成含 [code]LOCALE_NAME[/code]、设置界面、通用提示与 [code]ERR_SAVE_*[/code] 等框架内置键的本地化 CSV（[code]res://locale/localization.csv[/code]）、导入翻译并注册到 [code]project.godot[/code]；业务及已安装扩展的文案键须在 CSV 中自行追加。
 
