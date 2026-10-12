@@ -1,4 +1,4 @@
-﻿## 全局配置资源（[code]addons/gdframe/config/config.tres[/code]）；启动时由 [code]GDFrame[/code] 加载。
+## 全局配置资源（[code]addons/gdframe/config/config.tres[/code]）；启动时由 [code]GDFrame[/code] 加载。
 ## 路径类常量在脚本内固定（[member UI_ROOT_DIR]、[member FSM_ROOT] 等），一般不改；可调项在检查器分组中编辑。
 extends Resource
 class_name GDFrameConfig
