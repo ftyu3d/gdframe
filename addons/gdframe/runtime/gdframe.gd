@@ -1,4 +1,4 @@
-﻿## GDFrame 全局入口（Autoload 名仍为 [code]GDFrame[/code]）。
+## GDFrame 全局入口（Autoload 名仍为 [code]GDFrame[/code]）。
 ## 类型注解用 [code]GDFrameRoot[/code]；业务调用用 [code]GDFrame.ui[/code]、[code]GDFrame.audio[/code] 等服务。
 ## 勿直接改本插件内部实现类。
 class_name GDFrameRoot

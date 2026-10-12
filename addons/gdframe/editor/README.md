@@ -1,4 +1,4 @@
-﻿# GDFrame
+# GDFrame
 
 面向 Godot 的 GDScript 插件化运行时框架。启用插件后会自动注册全局单例 **`GDFrame`**（Autoload）。
 

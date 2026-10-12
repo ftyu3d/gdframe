@@ -1,4 +1,4 @@
-﻿## 输入设备分类，与 Godot 物理 [InputEvent] 子类对应。
+## 输入设备分类，与 Godot 物理 [InputEvent] 子类对应。
 class_name GDFrameInputEventDevice
 extends RefCounted
 
