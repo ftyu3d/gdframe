@@ -62,25 +62,41 @@ static func window_size_aspect(screen: int = -1) -> float:
 	return float(maxi(full.x, 1)) / float(maxi(full.y, 1))
 
 
-## 默认窗口化分辨率：当前屏幕可用区按 [member GDFrameConfig.window_size_scale_steps] 首档缩小。
+## 默认窗口化分辨率：取 [method recommended_window_sizes] 第二档（下标 [code]1[/code]；不足一档则取首项）。
 static func default_window_size() -> Vector2i:
-	var screen: int = reference_screen()
-	var usable: Vector2i = usable_size_for_screen(screen)
-	if usable.x < 1 or usable.y < 1:
-		return project_viewport_size()
-	var max_fitted: Vector2i = _fit_size_to_aspect(usable, window_size_aspect(screen))
-	return _scaled_fitted_size(max_fitted, _default_window_scale())
+	var options: Array[Vector2i] = recommended_window_sizes()
+	if options.is_empty():
+		var screen: int = reference_screen()
+		var usable: Vector2i = usable_size_for_screen(screen)
+		if usable.x < 1 or usable.y < 1:
+			return project_viewport_size()
+		return _fit_size_to_aspect(usable, window_size_aspect(screen))
+	return options[mini(1, options.size() - 1)]
 
 
 static func _frame_config() -> GDFrameConfig:
 	return load(GDFrameConfig.PATH) as GDFrameConfig
 
 
-static func _default_window_scale() -> float:
-	var steps: Array[float] = _frame_config().window_size_scale_steps
-	if steps.is_empty():
-		return 1.0
-	return steps[0]
+## 新建档案默认显示模式，读 [member GDFrameConfig.default_display_mode]。
+static func _default_display_mode() -> String:
+	var mode: String
+	match _frame_config().default_display_mode:
+		GDFrameConfig.DefaultDisplayMode.MAXIMIZED:
+			mode = DISPLAY_MODE_MAXIMIZED
+		GDFrameConfig.DefaultDisplayMode.BORDERLESS:
+			mode = DISPLAY_MODE_BORDERLESS
+		GDFrameConfig.DefaultDisplayMode.EXCLUSIVE:
+			mode = DISPLAY_MODE_EXCLUSIVE
+		_:
+			mode = DISPLAY_MODE_WINDOWED
+	if OS.has_feature("web"):
+		return (
+			mode
+			if mode == DISPLAY_MODE_WINDOWED or mode == DISPLAY_MODE_BORDERLESS
+			else DISPLAY_MODE_WINDOWED
+		)
+	return mode
 
 
 static func default_settings(
@@ -93,7 +109,7 @@ static func default_settings(
 		else default_window_size()
 	)
 	return {
-		"display_mode": DISPLAY_MODE_BORDERLESS,
+		"display_mode": _default_display_mode(),
 		"window_width": size.x,
 		"window_height": size.y,
 		"vsync_enabled": true,
@@ -254,8 +270,8 @@ static func display_mode_options() -> Array[Dictionary]:
 	]
 
 
-## 设置界面可选分辨率：比例见 [method window_size_aspect]，档位见 [member GDFrameConfig.window_size_scale_steps] 与 [member GDFrameConfig.common_window_heights]。不超过可用区域。设计分辨率放得下时列入。
-static func window_size_options() -> Array[Vector2i]:
+## 推荐窗口化分辨率：可用区最大适配尺寸 + [member GDFrameConfig.window_size_scale_steps]，按面积降序。
+static func recommended_window_sizes() -> Array[Vector2i]:
 	var cfg: GDFrameConfig = _frame_config()
 	var screen: int = reference_screen()
 	var usable: Vector2i = usable_size_for_screen(screen)
@@ -263,21 +279,38 @@ static func window_size_options() -> Array[Vector2i]:
 	var seen: Dictionary[String, bool] = {}
 	var out: Array[Vector2i] = []
 	var max_fitted: Vector2i = _fit_size_to_aspect(usable, aspect)
+	var enforce_min: bool = _min_window_floor_active(max_fitted)
 
-	_add_unique_size(out, seen, max_fitted)
+	_add_unique_size(out, seen, max_fitted, enforce_min)
 	for scale: float in cfg.window_size_scale_steps:
-		_add_unique_size(out, seen, _scaled_fitted_size(max_fitted, scale))
+		_add_unique_size(out, seen, _scaled_fitted_size(max_fitted, scale), enforce_min)
+	out.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x * a.y > b.x * b.y)
+	return out
+
+
+## 设置界面可选分辨率：推荐列表再并入 [member GDFrameConfig.common_window_heights] 与设计分辨率。不超过可用区域。可用区放得下 [member GDFrameConfig.min_window_size] 时更小的不列入；放不下时仍按缩放档列出。
+static func window_size_options() -> Array[Vector2i]:
+	var cfg: GDFrameConfig = _frame_config()
+	var screen: int = reference_screen()
+	var usable: Vector2i = usable_size_for_screen(screen)
+	var aspect: float = window_size_aspect(screen)
+	var seen: Dictionary[String, bool] = {}
+	var out: Array[Vector2i] = recommended_window_sizes()
+	for size: Vector2i in out:
+		seen["%d,%d" % [size.x, size.y]] = true
+	var enforce_min: bool = _min_window_floor_active(_fit_size_to_aspect(usable, aspect))
+
 	for height: int in cfg.common_window_heights:
 		if height > usable.y:
 			continue
 		var width: int = int(round(float(height) * aspect))
 		if width > usable.x:
 			continue
-		_add_unique_size(out, seen, Vector2i(width, height))
+		_add_unique_size(out, seen, Vector2i(width, height), enforce_min)
 
 	var project_size: Vector2i = project_viewport_size()
 	if project_size.x <= usable.x and project_size.y <= usable.y:
-		_add_unique_size(out, seen, project_size)
+		_add_unique_size(out, seen, project_size, enforce_min)
 
 	if out.is_empty():
 		out.append(default_window_size())
@@ -296,12 +329,18 @@ static func _fit_size_to_aspect(max_size: Vector2i, aspect: float) -> Vector2i:
 	return Vector2i(width, maxi(1, int(round(float(width) / aspect))))
 
 
+## 将已适配尺寸按 [param scale] 缩小。
 static func _scaled_fitted_size(fitted: Vector2i, scale: float) -> Vector2i:
-	var min_size: Vector2i = _frame_config().min_window_size
 	return Vector2i(
-		maxi(min_size.x, int(floor(float(fitted.x) * scale))),
-		maxi(min_size.y, int(floor(float(fitted.y) * scale))),
+		maxi(1, int(floor(float(fitted.x) * scale))),
+		maxi(1, int(floor(float(fitted.y) * scale))),
 	)
+
+
+## 可用区最大适配尺寸达到 [member GDFrameConfig.min_window_size] 时，列表与存档才执行下限。
+static func _min_window_floor_active(max_fitted: Vector2i) -> bool:
+	var min_size: Vector2i = _frame_config().min_window_size
+	return max_fitted.x >= min_size.x and max_fitted.y >= min_size.y
 
 
 static func reference_screen() -> int:
@@ -325,10 +364,15 @@ static func clamp_to_usable(size: Vector2i, screen: int = -1) -> Vector2i:
 	return Vector2i(mini(size.x, max_size.x), mini(size.y, max_size.y))
 
 
-static func _add_unique_size(out: Array[Vector2i], seen: Dictionary[String, bool], size: Vector2i) -> void:
+static func _add_unique_size(
+	out: Array[Vector2i],
+	seen: Dictionary[String, bool],
+	size: Vector2i,
+	enforce_min: bool,
+) -> void:
 	var guarded: Vector2i = _guard_windowed_client_size(size)
 	var min_size: Vector2i = _frame_config().min_window_size
-	if guarded.x < min_size.x or guarded.y < min_size.y:
+	if enforce_min and (guarded.x < min_size.x or guarded.y < min_size.y):
 		return
 	var key: String = "%d,%d" % [guarded.x, guarded.y]
 	if seen.has(key):
@@ -554,12 +598,19 @@ static func _normalize_display_mode(mode: String) -> String:
 	var s: String = mode.strip_edges()
 	if OS.has_feature("web"):
 		return s if s == DISPLAY_MODE_WINDOWED or s == DISPLAY_MODE_BORDERLESS else DISPLAY_MODE_WINDOWED
-	return s if s in _VALID_DISPLAY_MODES else DISPLAY_MODE_BORDERLESS
+	return s if s in _VALID_DISPLAY_MODES else _default_display_mode()
 
 
 static func _normalize_window_size(size: Vector2i) -> Vector2i:
+	var screen: int = reference_screen()
+	var max_fitted: Vector2i = _fit_size_to_aspect(
+		usable_size_for_screen(screen),
+		window_size_aspect(screen),
+	)
 	var min_size: Vector2i = _frame_config().min_window_size
-	if size.x < min_size.x or size.y < min_size.y:
+	if _min_window_floor_active(max_fitted) and (size.x < min_size.x or size.y < min_size.y):
+		return default_window_size()
+	if size.x < 1 or size.y < 1:
 		return default_window_size()
 	return _guard_windowed_client_size(clamp_to_usable(size))
 
