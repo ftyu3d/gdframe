@@ -1,5 +1,4 @@
 extends RefCounted
-class_name GDFrameExtManageList
 ## 扩展管理 Dock 列表数据（已安装 + ext_index.cfg 可安装项）。
 
 const EXT_INDEX_FILE: String = "ext_index.cfg"

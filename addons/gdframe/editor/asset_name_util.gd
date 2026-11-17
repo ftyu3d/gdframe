@@ -1,5 +1,4 @@
 extends RefCounted
-class_name GDFrameAssetNameUtil
 ## UI / FSM / 扩展模块 id 规范化。
 
 

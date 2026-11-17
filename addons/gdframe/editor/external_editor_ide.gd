@@ -1,10 +1,12 @@
 @tool
 extends RefCounted
-class_name GDFrameExternalEditorIde
 ## 外部编辑器（VS Code 系）候选可执行文件来源。
 ## [member win] / [member mac] 为相对安装根目录的路径；[member linux] 为绝对路径（[code]~[/code] 前缀替换为 HOME）。
 ## [member prefixes] / [member exes] 用于扫描安装根目录下名称匹配的变体目录（如 CodeBuddy CN、Trae CN）。
 ## 均为 VS Code 系命令行：目录参数与 {project} / {file} --goto 通用。
+
+## 本文件位于 .gdignore 目录，类名不会注册，故以 load 自引用方式构造实例。
+const _SELF_PATH: String = "res://addons/gdframe/editor/external_editor_ide.gd"
 
 var id: String
 var label: String
@@ -15,7 +17,7 @@ var win: PackedStringArray
 var mac: PackedStringArray
 var linux: PackedStringArray
 
-static var _all: Array[GDFrameExternalEditorIde] = []
+static var _all: Array = []
 
 
 func _init(
@@ -38,10 +40,11 @@ func _init(
 	linux = p_linux
 
 
-static func all() -> Array[GDFrameExternalEditorIde]:
+static func all() -> Array:
 	if _all.is_empty():
+		var ide_script = load(_SELF_PATH)
 		_all = [
-			GDFrameExternalEditorIde.new(
+			ide_script.new(
 				"vscode",
 				"VS Code",
 				PackedStringArray(["code", "code.cmd", "code.exe"]),
@@ -64,7 +67,7 @@ static func all() -> Array[GDFrameExternalEditorIde]:
 					"/snap/bin/code",
 				]),
 			),
-			GDFrameExternalEditorIde.new(
+			ide_script.new(
 				"cursor",
 				"Cursor",
 				PackedStringArray(["cursor", "cursor.cmd", "cursor.exe"]),
@@ -81,7 +84,7 @@ static func all() -> Array[GDFrameExternalEditorIde]:
 				]),
 				PackedStringArray(["~/.local/bin/cursor", "/usr/bin/cursor", "/usr/share/cursor/cursor"]),
 			),
-			GDFrameExternalEditorIde.new(
+			ide_script.new(
 				"codebuddy",
 				"CodeBuddy",
 				PackedStringArray(["codebuddy"]),
@@ -107,7 +110,7 @@ static func all() -> Array[GDFrameExternalEditorIde]:
 					"/usr/share/codebuddy/codebuddy",
 				]),
 			),
-			GDFrameExternalEditorIde.new(
+			ide_script.new(
 				"trae",
 				"TRAE",
 				PackedStringArray(["trae"]),
@@ -133,8 +136,8 @@ static func all() -> Array[GDFrameExternalEditorIde]:
 	return _all
 
 
-static func by_id(ide_id: String) -> GDFrameExternalEditorIde:
-	for ide: GDFrameExternalEditorIde in all():
+static func by_id(ide_id: String) -> RefCounted:
+	for ide in all():
 		if ide.id == ide_id:
 			return ide
 	return null
@@ -142,7 +145,7 @@ static func by_id(ide_id: String) -> GDFrameExternalEditorIde:
 
 static func ids() -> PackedStringArray:
 	var out: PackedStringArray = PackedStringArray()
-	for ide: GDFrameExternalEditorIde in all():
+	for ide in all():
 		out.append(ide.id)
 	return out
 

@@ -99,9 +99,11 @@ static func _default_display_mode() -> String:
 	return mode
 
 
+## [param bus_linear] / [param bus_muted] 留空即无音频键；
+## 音频扩展在自己的 [code]module.gd[/code] 的 [code]ensure_profile[/code] 里补齐自己的总线键。
 static func default_settings(
-	bus_linear: Dictionary = GDFrameAudioManager.default_bus_volumes(),
-	bus_muted: Dictionary = GDFrameAudioManager.default_bus_muted(),
+	bus_linear: Dictionary = {},
+	bus_muted: Dictionary = {},
 ) -> Dictionary[String, Variant]:
 	var size: Vector2i = (
 		project_viewport_size()
@@ -174,8 +176,8 @@ func default_snapshot() -> Dictionary:
 	var modules: Array[Script] = _EXT_RUNTIME.get_modules()
 	var merged: Dictionary = _EXT_RUNTIME.merge_extra_bus_defaults(
 		{
-			"bus_linear": GDFrameAudioManager.default_bus_volumes(),
-			"bus_muted": GDFrameAudioManager.default_bus_muted(),
+			"bus_linear": {},
+			"bus_muted": {},
 		},
 		modules,
 	)

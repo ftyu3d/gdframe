@@ -8,9 +8,7 @@ extends "res://gdframe_project/ext.gd"
 # Preloads
 # =============================================================================
 
-const NodePool: Script = preload("res://addons/gdframe/runtime/pool/node_pool.gd")
 const UIManager: Script = preload("res://addons/gdframe/runtime/ui/ui_manager.gd")
-const FSMRunner: Script = preload("res://addons/gdframe/runtime/fsm/fsm_runner.gd")
 const UISceneScan: Script = preload("res://addons/gdframe/runtime/ui/ui_scene_scan.gd")
 const SaveManager: Script = preload("res://addons/gdframe/runtime/save/save_manager.gd")
 const SettingsManager: Script = preload("res://addons/gdframe/runtime/settings/settings_manager.gd")
@@ -21,21 +19,12 @@ const PauseManager: Script = preload("res://addons/gdframe/runtime/pause/pause_m
 # State — subsystems
 # =============================================================================
 
-var pool: GDFrameNodePool
 var ui: GDFrameUIManager
 var input: GDFrameInputDeviceTracker
 var save: GDFrameSaveManager
 var settings: GDFrameSettingsManager
 var audio: GDFrameAudioChannels
 var pause: GDFramePauseManager
-var _fsm: GDFrameFSMRunner = null
-var fsm: GDFrameFSMRunner:
-	get:
-		if _fsm == null:
-			_fsm = FSMRunner.new()
-			_fsm.setup_tree_pause_tracking(get_tree())
-			_fsm.ensure_registry_index()
-		return _fsm
 
 # =============================================================================
 # State — runtime
@@ -48,14 +37,12 @@ var _config: GDFrameConfig
 # Lifecycle
 # =============================================================================
 
-## 启动时初始化：配置、存档、设置、音频、UI 层、对象池（FSM 在首次访问 [member fsm] 时初始化）；UI 场景目录见 [member GDFrameConfig.UI_ROOT_DIR]。
+## 启动时初始化：配置、档案、设置、音频、UI 层；UI 场景目录见 [member GDFrameConfig.UI_ROOT_DIR]。
 func _ready() -> void:
 	_config = load(GDFrameConfig.PATH) as GDFrameConfig
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	pool = NodePool.new()
-	pool.setup(_config.pool_log_limits)
 	save = SaveManager.new()
-	save.setup(_config)
+	save.setup()
 	if save.startup_profile_fallback():
 		signal_gdframe_profile_startup_fallback.emit()
 	settings = SettingsManager.new(save)
@@ -77,13 +64,6 @@ func _ready() -> void:
 		signal_gdframe_audio_paused.emit(paused)
 	save.profile_saved_hook = func(err: StringName) -> void:
 		signal_gdframe_profile_saved.emit(err)
-	save.game_save_written_hook = func(slot_id: String, err: StringName) -> void:
-		signal_gdframe_game_save_written.emit(slot_id, err)
-	save.game_save_deleted_hook = func(slot_id: String, err: StringName) -> void:
-		signal_gdframe_game_save_deleted.emit(slot_id, err)
-	save.profile_reloaded_hook = func() -> void:
-		GDFrameExtBootstrap.ensure_profile(save.get_profile())
-		settings.apply()
 	settings.audio_apply_hook = Callable(audio, &"apply_from_profile")
 	settings.locale_changed_hook = Callable(self, &"_locale_broadcast_if_changed")
 	pause = PauseManager.new()
@@ -97,19 +77,12 @@ func _ready() -> void:
 	input = InputDeviceTracker.new()
 	input.setup(self, _config.keyboard_nav_focus)
 	signal_gdframe_input_device_changed.connect(_on_input_device_changed)
-	if OS.has_feature("editor"):
-		EngineDebugger.register_message_capture("gdframe", _on_debugger_capture)
 	audio.apply_from_profile()
 
 
 func _apply_settings_from_profile_deferred() -> void:
 	settings.apply_from_profile(false)
 	_locale_broadcast_if_changed()
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE and OS.has_feature("editor"):
-		EngineDebugger.unregister_message_capture("gdframe")
 
 
 func _input(event: InputEvent) -> void:
@@ -139,14 +112,6 @@ func _input(event: InputEvent) -> void:
 	# 竖排页不吃左右键时，避免 Godot 默认邻居导航抢走焦点。
 	if nav_action != GDFrameUINav.NavPress.ACCEPT and active.ui_nav_has_items():
 		get_viewport().set_input_as_handled()
-
-
-## 编辑器调试器拉取对象池统计时的回调（仅编辑器）。
-func _on_debugger_capture(message: String, _data: Array) -> bool:
-	if message == "request_pool_stats":
-		EngineDebugger.send_message("gdframe:pool_stats", [pool.get_all_stats()])
-		return true
-	return false
 
 
 # =============================================================================

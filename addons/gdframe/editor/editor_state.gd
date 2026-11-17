@@ -1,6 +1,5 @@
 @tool
 extends RefCounted
-class_name GDFrameEditorState
 ## 编辑器侧状态（更新源、外部编辑器 IDE）统一存于 [EditorSettings] 的工程元数据，
 ## 不再往 [code]user://[/code] 额外写文件；随工程保存，换机器不继承。
 

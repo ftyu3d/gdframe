@@ -14,14 +14,12 @@ const RELOAD_META_KEY: String = "gdframe_plugin_reloading"
 const PAGE_GENERAL: String = "general"
 const PAGE_EXT: String = "ext"
 const PAGE_CREATE_UI: String = "create_ui"
-const PAGE_FSM: String = "fsm"
-const PAGE_POOL: String = "pool"
+const PAGE_SETTINGS: String = "settings"
 const PAGE_UPDATE: String = "update"
 
-const FSM_STATE_SCRIPT_PATH: String = "res://addons/gdframe/runtime/fsm/fsm_state.gd"
-const FSM_REGISTRY_SCRIPT_PATH: String = "res://addons/gdframe/runtime/fsm/fsm_registry_base.gd"
 
-const PoolDebuggerPlugin: Script = preload("res://addons/gdframe/editor/pool_debugger_plugin.gd")
+## editor/ 目录下有 .gdignore（防止编辑器脚本被打进导出包体），其中的 class_name 不会注册到全局，
+## 因此这里一律通过 preload 常量访问，禁止使用 GDFrameXXX 全局类名做类型标注。
 const EditorState: Script = preload("res://addons/gdframe/editor/editor_state.gd")
 const ExternalEditorIde: Script = preload("res://addons/gdframe/editor/external_editor_ide.gd")
 const UpdaterScript: Script = preload("res://addons/gdframe/editor/updater.gd")
@@ -32,21 +30,18 @@ const ExtModuleMeta: Script = preload("res://addons/gdframe/editor/module_meta.g
 const ExtCreate: Script = preload("res://addons/gdframe/editor/ext_create.gd")
 const ExtSlotsGen: Script = preload("res://addons/gdframe/editor/ext_slots_gen.gd")
 const ProfileSettingsGen: Script = preload("res://addons/gdframe/editor/profile_settings_gen.gd")
+const SettingsItemsPage: Script = preload("res://addons/gdframe/editor/settings_items_page.gd")
 const LocaleScaffold: Script = preload("res://addons/gdframe/editor/locale_scaffold.gd")
-const SaveFormatConvert: Script = preload("res://addons/gdframe/editor/save_format_convert.gd")
 const AssetNameUtil: Script = preload("res://addons/gdframe/editor/asset_name_util.gd")
 const ResultGen: Script = preload("res://addons/gdframe/editor/result_gen.gd")
 const SignalsGen: Script = preload("res://addons/gdframe/editor/signals_gen.gd")
 const AudioChannelsGen: Script = preload("res://addons/gdframe/editor/audio_channels_gen.gd")
 const UISceneScan: Script = preload("res://addons/gdframe/runtime/ui/ui_scene_scan.gd")
-const FSMScan: Script = preload("res://addons/gdframe/runtime/fsm/fsm_scan.gd")
 const ModuleScan: Script = preload("res://addons/gdframe/runtime/ext/module_scan.gd")
 const ModuleEditorScan: Script = preload("res://addons/gdframe/editor/module_editor_scan.gd")
 
 const _SUPPORTED_VERSION_UNAVAILABLE_TEXT: String = "--"
 
-const _POOL_FILTER_DEBOUNCE_SEC: float = 0.15
-const _POOL_AUTO_REFRESH_INTERVAL_SEC: float = 0.1
 const _EXTERNAL_EDITOR_COLD_START_WAIT_SEC: float = 2.5
 const _EXTERNAL_EDITOR_GOTO_RETRY_WAIT_SEC: float = 1.2
 const _EXTERNAL_EDITOR_GOTO_MAX_RETRIES: int = 8
@@ -75,13 +70,9 @@ var _ext_dock_page_ids: PackedStringArray = []
 var _toggle_general: Button
 var _label_general_status: Label
 var _ui_max_layer_spin: SpinBox
-var _save_fmt_opt: OptionButton
 var _external_editor_ide_opt: OptionButton
-var _delete_all_saves_dialog: ConfirmationDialog
-var _save_format_change_dialog: ConfirmationDialog
+var _reset_profile_dialog: ConfirmationDialog
 var _external_editor_setup_dialog: AcceptDialog
-var _pending_save_format_index: int = -1
-var _save_format_switch_busy: bool = false
 
 var _external_editor_project_launched: bool = false
 var _external_editor_probe_cache: Dictionary[String, String] = {}
@@ -129,6 +120,13 @@ var _pending_rename_scene_path: String = ""
 var _ui_list_dirty: bool = true
 
 # =============================================================================
+# State — Settings page
+# =============================================================================
+
+var _toggle_settings: Button
+var _settings_page: Control
+
+# =============================================================================
 # State — Update page
 # =============================================================================
 
@@ -146,53 +144,8 @@ var _supported_option_last_index: int = 0
 var _remote_check_seq: int = 0
 
 # =============================================================================
-# State — FSM page
-# =============================================================================
-
-var _toggle_fsm: Button
-var _fsm_name_edit: LineEdit
-var _label_fsm_status: Label
-var _fsm_machine_option: OptionButton
-var _fsm_states_rows: VBoxContainer
-var _fsm_new_state_edit: LineEdit
-var _fsm_delete_machine_btn: Button
-var _fsm_delete_machine_dialog: ConfirmationDialog
-var _pending_delete_fsm_id: String = ""
-var _fsm_delete_state_dialog: ConfirmationDialog
-var _pending_delete_state_sid: String = ""
-var _pending_delete_state_key: String = ""
-var _rename_fsm_machine_dialog: AcceptDialog
-var _label_rename_fsm_machine_target: Label
-var _rename_fsm_machine_name_edit: LineEdit
-var _pending_rename_fsm_id: String = ""
-var _rename_fsm_state_dialog: AcceptDialog
-var _label_rename_fsm_state_target: Label
-var _rename_fsm_state_name_edit: LineEdit
-var _pending_rename_state_sid: String = ""
-var _pending_rename_state_key: String = ""
-
-# =============================================================================
-# State — Pool page
-# =============================================================================
-
-var _toggle_pool: Button
-var _pool_filter_edit: LineEdit
-var _pool_tree: Tree
-var _label_pool_status: Label
-var _pool_auto_refresh_cb: CheckButton
-var _pool_auto_refresh_timer: Timer
-var _pool_page_visible: bool = false
-var _pool_debug_plugin: EditorDebuggerPlugin
-var _pool_last_stats: Dictionary = {}
-var _pool_filter_seq: int = 0
-
-# =============================================================================
-# State — asset scan cache
-# =============================================================================
 
 var _asset_scan_ui_scenes: Array[String] = []
-var _asset_scan_fsm_reg_paths: Array[String] = []
-var _asset_scan_fsm_states: Dictionary = {}
 var _asset_fs_sync_pending: bool = false
 var _asset_fs_sync_paths: PackedStringArray = PackedStringArray()
 var _asset_fs_sync_refresh_ui: bool = false
@@ -220,27 +173,11 @@ func _enter_tree() -> void:
 		_set_dock_status("update", "插件已重载")
 	_load_local_plugin_index()
 	_load_local_ext_index()
-	_pool_debug_plugin = PoolDebuggerPlugin.new()
-	_pool_debug_plugin.set_stats_handler(Callable(self, "_on_runtime_pool_stats"))
-	add_debugger_plugin(_pool_debug_plugin)
-	_pool_auto_refresh_timer = Timer.new()
-	_pool_auto_refresh_timer.wait_time = _POOL_AUTO_REFRESH_INTERVAL_SEC
-	_pool_auto_refresh_timer.autostart = false
-	_pool_auto_refresh_timer.timeout.connect(_on_pool_auto_refresh_timeout)
-	add_child(_pool_auto_refresh_timer)
 
 
 func _exit_tree() -> void:
 	_reset_locale_import_state()
 	_reset_asset_filesystem_sync_state()
-	if _pool_debug_plugin != null:
-		remove_debugger_plugin(_pool_debug_plugin)
-		_pool_debug_plugin = null
-	if _pool_auto_refresh_timer != null:
-		_pool_auto_refresh_timer.stop()
-		if is_instance_valid(_pool_auto_refresh_timer):
-			_pool_auto_refresh_timer.queue_free()
-		_pool_auto_refresh_timer = null
 	if _dock != null:
 		remove_control_from_bottom_panel(_dock)
 		_dock.queue_free()
@@ -260,8 +197,7 @@ const _DOCK_STATUS_DEFAULTS: Dictionary = {
 	"general": "就绪",
 	"ui": "待创建",
 	"ext": "待操作",
-	"fsm": "就绪",
-	"pool": "尚未收到运行时数据",
+	"settings": "就绪",
 	"update": "待检查",
 }
 
@@ -290,10 +226,9 @@ func _set_dock_status(slot: String, text: String) -> void:
 			label = _label_ext_status
 		"ui":
 			label = _label_create_ui_status
-		"fsm":
-			label = _label_fsm_status
-		"pool":
-			label = _label_pool_status
+		"settings":
+			if _settings_page != null and is_instance_valid(_settings_page):
+				label = _settings_page.call(&"status_label") as Label
 		"update":
 			label = _label_status
 	var display: String = text.strip_edges()
@@ -404,23 +339,14 @@ func _build_dock() -> void:
 	)
 	sidebar.add_child(_toggle_create_ui)
 
-	_toggle_fsm = Button.new()
-	_toggle_fsm.text = "状态机"
-	_toggle_fsm.toggle_mode = true
-	_toggle_fsm.button_group = button_group
-	_toggle_fsm.pressed.connect(func() -> void:
-		_show_page(PAGE_FSM)
+	_toggle_settings = Button.new()
+	_toggle_settings.text = "设置项"
+	_toggle_settings.toggle_mode = true
+	_toggle_settings.button_group = button_group
+	_toggle_settings.pressed.connect(func() -> void:
+		_show_page(PAGE_SETTINGS)
 	)
-	sidebar.add_child(_toggle_fsm)
-
-	_toggle_pool = Button.new()
-	_toggle_pool.text = "对象池"
-	_toggle_pool.toggle_mode = true
-	_toggle_pool.button_group = button_group
-	_toggle_pool.pressed.connect(func() -> void:
-		_show_page(PAGE_POOL)
-	)
-	sidebar.add_child(_toggle_pool)
+	sidebar.add_child(_toggle_settings)
 
 	_toggle_ext = Button.new()
 	_toggle_ext.text = "扩展管理"
@@ -479,25 +405,15 @@ func _build_dock() -> void:
 	_rename_ui_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rename_box.add_child(_rename_ui_name_edit)
 
-	_delete_all_saves_dialog = ConfirmationDialog.new()
-	_configure_plugin_modal_dialog(_delete_all_saves_dialog)
-	_delete_all_saves_dialog.title = "确认删除所有存档"
-	_delete_all_saves_dialog.dialog_text = (
-		"将永久删除 user://gdframe 下的全部内容（profile、slots、账号等）。\n此操作不可撤销，是否继续？"
+	_reset_profile_dialog = ConfirmationDialog.new()
+	_configure_plugin_modal_dialog(_reset_profile_dialog)
+	_reset_profile_dialog.title = "确认重置档案"
+	_reset_profile_dialog.dialog_text = (
+		"将永久删除 user://gdframe 下的档案文件（设置等）。\n此操作不可撤销，是否继续？"
 	)
-	_delete_all_saves_dialog.confirmed.connect(_on_delete_all_saves_confirmed)
-	_dock.add_child(_delete_all_saves_dialog)
+	_reset_profile_dialog.confirmed.connect(_on_reset_profile_confirmed)
+	_dock.add_child(_reset_profile_dialog)
 
-	_save_format_change_dialog = ConfirmationDialog.new()
-	_configure_plugin_modal_dialog(_save_format_change_dialog)
-	_save_format_change_dialog.title = "切换存档格式"
-	_save_format_change_dialog.dialog_text = (
-		"切换存档格式将把 user://gdframe 下的现有存档转换为新格式（profile 与 slots）。\n"
-		+ "是否继续？"
-	)
-	_save_format_change_dialog.confirmed.connect(_on_save_format_change_confirmed)
-	_save_format_change_dialog.canceled.connect(_on_save_format_change_canceled)
-	_dock.add_child(_save_format_change_dialog)
 
 	_external_editor_setup_dialog = AcceptDialog.new()
 	_configure_plugin_modal_dialog(_external_editor_setup_dialog)
@@ -537,17 +453,9 @@ func _build_dock() -> void:
 	page_container.add_child(create_page)
 	_page_map[PAGE_CREATE_UI] = create_page
 
-	var fsm_page: Variant = _build_fsm_page()
-	page_container.add_child(fsm_page)
-	_page_map[PAGE_FSM] = fsm_page
-
-	var update_page: Variant = _build_update_page()
-	page_container.add_child(update_page)
-	_page_map[PAGE_UPDATE] = update_page
-
-	var pool_page: Variant = _build_pool_page()
-	page_container.add_child(pool_page)
-	_page_map[PAGE_POOL] = pool_page
+	var settings_page: Variant = _build_settings_page()
+	page_container.add_child(settings_page)
+	_page_map[PAGE_SETTINGS] = settings_page
 
 	_rebuild_extension_dock_tabs()
 
@@ -564,9 +472,8 @@ func _fit_dock_sidebar_scroll_min_height() -> void:
 	var core_btns: Array[Button] = [
 		_toggle_general,
 		_toggle_create_ui,
-		_toggle_fsm,
-		_toggle_pool,
 		_toggle_ext,
+		_toggle_settings,
 		_toggle_update,
 	]
 	var sep: int = 6
@@ -663,14 +570,12 @@ func _show_page(page_name: String) -> void:
 		var page: Control = _page_map.get(key) as Control
 		if page != null:
 			page.visible = (key == page_name)
-	_pool_page_visible = page_name == PAGE_POOL
-	_sync_pool_auto_refresh_timer()
 	if page_name == PAGE_CREATE_UI and _ui_list_dirty:
 		call_deferred("_refresh_ui_manage_list")
 	if page_name == PAGE_EXT:
 		call_deferred("_refresh_ext_on_page_show")
-	if page_name == PAGE_FSM:
-		call_deferred("_refresh_fsm_ui")
+	if page_name == PAGE_SETTINGS:
+		call_deferred("_refresh_settings_on_page_show")
 
 # =============================================================================
 # Config
@@ -698,10 +603,6 @@ func _sync_general_page_from_config() -> void:
 		return
 	if _ui_max_layer_spin != null:
 		_ui_max_layer_spin.set_value_no_signal(float(_config.ui_max_layer))
-	if _save_fmt_opt != null:
-		_save_fmt_opt.select(
-			1 if _config.save_file_format == GDFrameConfig.SaveFileFormat.BINARY else 0
-		)
 
 func _save_config(ok_message: String) -> void:
 	var err: Error = ResourceSaver.save(_config, GDFrameConfig.PATH)
@@ -721,65 +622,6 @@ func _on_ui_max_layer_changed(max_layer: int) -> void:
 		"已写入 %s（层 0～层 %d）。" % [GDFrameConfig.PATH.get_file(), _config.ui_max_layer],
 	)
 	_refresh_ui_manage_list()
-
-func _on_save_format_option_changed(index: int) -> void:
-	var current_index: int = (
-		1 if _config.save_file_format == GDFrameConfig.SaveFileFormat.BINARY else 0
-	)
-	if index == current_index:
-		return
-	if _save_format_switch_busy:
-		_set_save_format_option_index(current_index)
-		_set_dock_status("general", "存档格式转换进行中，请稍候。")
-		return
-	if _editor_is_playing():
-		_set_save_format_option_index(current_index)
-		_set_dock_status("general", "请先停止运行中的游戏，再切换存档格式。")
-		return
-	_pending_save_format_index = index
-	_set_save_format_option_index(current_index)
-	_save_format_change_dialog.popup_centered(Vector2i(520, 180))
-
-
-func _set_save_format_option_index(index: int) -> void:
-	if _save_fmt_opt == null:
-		return
-	_save_fmt_opt.set_block_signals(true)
-	_save_fmt_opt.select(index)
-	_save_fmt_opt.set_block_signals(false)
-
-
-func _on_save_format_change_canceled() -> void:
-	_pending_save_format_index = -1
-
-
-func _on_save_format_change_confirmed() -> void:
-	var new_index: int = _pending_save_format_index
-	_pending_save_format_index = -1
-	if new_index < 0:
-		return
-	if _save_format_switch_busy:
-		return
-	if _editor_is_playing():
-		_set_dock_status("general", "请先停止运行中的游戏，再切换存档格式。")
-		return
-	_save_format_switch_busy = true
-	_save_fmt_opt.disabled = true
-	var target_ext: String = ".res" if new_index == 1 else ".tres"
-	var conv: Dictionary = SaveFormatConvert.convert_user_saves_format(target_ext)
-	_save_format_switch_busy = false
-	_save_fmt_opt.disabled = false
-	if not bool(conv.get("ok", false)):
-		_set_dock_status("general", str(conv.get("message", "转换失败。")))
-		return
-	_config.save_file_format = (
-		GDFrameConfig.SaveFileFormat.BINARY
-		if new_index == 1
-		else GDFrameConfig.SaveFileFormat.TEXT
-	)
-	var conv_msg: String = str(conv.get("message", "已切换存档格式。"))
-	_save_config(conv_msg)
-	_set_save_format_option_index(new_index)
 
 func _on_general_refresh_config_pressed() -> void:
 	_reload_config_from_tres()
@@ -1000,8 +842,6 @@ func _apply_profile_settings_generate_writes(result: Dictionary, sync_filesystem
 
 func _invalidate_asset_scan_cache() -> void:
 	_asset_scan_ui_scenes.clear()
-	_asset_scan_fsm_reg_paths.clear()
-	_asset_scan_fsm_states.clear()
 
 func _get_ui_scene_paths() -> Array[String]:
 	if _asset_scan_ui_scenes.is_empty():
@@ -1009,26 +849,14 @@ func _get_ui_scene_paths() -> Array[String]:
 		_asset_scan_ui_scenes.sort()
 	return _asset_scan_ui_scenes
 
-func _get_fsm_registry_paths() -> Array[String]:
-	if _asset_scan_fsm_reg_paths.is_empty():
-		_asset_scan_fsm_reg_paths = FSMScan.collect_fsm_registry_paths(GDFrameConfig.FSM_ROOT)
-	return _asset_scan_fsm_reg_paths
-
-func _get_fsm_state_keys(fsm_id: String) -> Array[String]:
-	if not _asset_scan_fsm_states.has(fsm_id):
-		_asset_scan_fsm_states[fsm_id] = _collect_fsm_state_keys(fsm_id)
-	return _asset_scan_fsm_states[fsm_id] as Array[String]
-
 func _after_asset_tree_change(
 	refresh_ui_list: bool = false,
-	refresh_fsm: bool = false,
-	refresh_fsm_states_only: bool = false,
 	changed_paths: PackedStringArray = PackedStringArray(),
 	refresh_ext_list: bool = false,
 ) -> void:
 	_invalidate_asset_scan_cache()
 	var sync_paths: PackedStringArray = changed_paths.duplicate()
-	if refresh_ui_list or refresh_fsm or refresh_fsm_states_only:
+	if refresh_ui_list:
 		if _regenerate_constants_registry(false):
 			if GDFrameConfig.CONSTANTS_SCRIPT_PATH not in sync_paths:
 				sync_paths.append(GDFrameConfig.CONSTANTS_SCRIPT_PATH)
@@ -1042,10 +870,6 @@ func _after_asset_tree_change(
 			_refresh_ui_manage_list(_get_ui_scene_paths())
 		else:
 			_asset_fs_sync_refresh_ui = true
-	if refresh_fsm:
-		_refresh_fsm_ui()
-	elif refresh_fsm_states_only:
-		_fsm_refresh_states_list()
 	if refresh_ext_list:
 		_refresh_ext_manage_list()
 
@@ -1258,32 +1082,19 @@ func _build_general_page() -> Control:
 	)
 	row_cfg_fields.add_child(_ui_max_layer_spin)
 
-	row_cfg_fields.add_child(_general_form_label("存档格式"))
-	_save_fmt_opt = OptionButton.new()
-	_save_fmt_opt.add_item(".tres 文本", 0)
-	_save_fmt_opt.add_item(".res 二进制", 1)
-	_save_fmt_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_save_fmt_opt.size_flags_stretch_ratio = 0.55
-	_save_fmt_opt.tooltip_text = (
-		"与 %s 中 save_file_format 一致；profile 与 slots 均使用该格式。切换时将现有存档转换为新格式。"
-		% GDFrameConfig.PATH
-	)
-	_save_fmt_opt.item_selected.connect(_on_save_format_option_changed)
-	row_cfg_fields.add_child(_save_fmt_opt)
-
 	row_cfg_fields.add_child(_general_tool_button(
 		"从文件同步配置",
 		"将 %s 的最新内容同步到本页；若检查器正在编辑该资源，会包含未保存的修改。" % GDFrameConfig.PATH,
 		&"_on_general_refresh_config_pressed",
 	))
-
-	var row_cfg: HBoxContainer = HBoxContainer.new()
-	row_cfg.add_theme_constant_override("separation", 6)
-	row_cfg.add_child(_general_tool_button(
+	row_cfg_fields.add_child(_general_tool_button(
 		"定位配置文件",
 		"在文件系统 Dock 定位并在检查器中打开：%s。" % GDFrameConfig.PATH,
 		&"_on_general_locate_gdframe_config_in_filesystem",
 	))
+
+	var row_cfg: HBoxContainer = HBoxContainer.new()
+	row_cfg.add_theme_constant_override("separation", 6)
 	row_cfg.add_child(_general_tool_button(
 		"打开信号脚本",
 		"定位并在编辑器中打开 %s；若启用外部编辑器且尚未打开工程，会先打开工程目录。"
@@ -1310,14 +1121,14 @@ func _build_general_page() -> Control:
 	var row_saves: HBoxContainer = HBoxContainer.new()
 	row_saves.add_theme_constant_override("separation", 6)
 	row_saves.add_child(_general_tool_button(
-		"打开存档路径",
-		"在文件管理器中打开 %s（profile、slots、账号等）；不存在则先创建。" % GDFrameSaveManager.USER_ROOT_URL,
+		"打开档案路径",
+		"在文件管理器中打开 %s（档案文件与扩展数据）；不存在则先创建。" % GDFrameSaveManager.USER_ROOT_URL,
 		&"_on_open_save_directory_pressed",
 	))
 	row_saves.add_child(_general_tool_button(
-		"清空存档",
-		"删除 %s 下全部存档（不可撤销）。" % GDFrameSaveManager.USER_ROOT_URL,
-		&"_on_delete_all_saves_pressed",
+		"重置档案",
+		"删除 %s 下的档案文件（设置等，不可撤销）。" % GDFrameSaveManager.USER_ROOT_URL,
+		&"_on_reset_profile_pressed",
 	))
 	panel.add_child(row_saves)
 
@@ -1346,29 +1157,32 @@ func _on_open_save_directory_pressed() -> void:
 		return
 	_set_dock_status("general","已在文件管理器中打开：%s" % abs_path)
 
-func _on_delete_all_saves_pressed() -> void:
+func _on_reset_profile_pressed() -> void:
 	_set_dock_status("general","")
 	if _editor_is_playing():
-		_set_dock_status("general","请先停止运行中的游戏，再删除存档。")
+		_set_dock_status("general","请先停止运行中的游戏，再重置档案。")
 		return
-	_delete_all_saves_dialog.popup_centered(Vector2i(480, 160))
+	_reset_profile_dialog.popup_centered(Vector2i(480, 160))
 
-func _on_delete_all_saves_confirmed() -> void:
+func _on_reset_profile_confirmed() -> void:
 	if _editor_is_playing():
-		_set_dock_status("general","请先停止运行中的游戏，再删除存档。")
+		_set_dock_status("general","请先停止运行中的游戏，再重置档案。")
 		return
-	var err: Error = _delete_user_save_data()
+	var err: Error = _delete_profile_files()
 	if err != OK:
 		_set_dock_status("general","删除失败（错误 %s）。" % err)
 		return
-	_set_dock_status("general","已删除所有存档：%s" % GDFrameSaveManager.USER_ROOT_URL)
+	_set_dock_status("general","已删除档案文件：%s" % GDFrameSaveManager.USER_ROOT_URL)
 
 
-func _delete_user_save_data() -> Error:
-	var abs_path: Variant = _save_user_global_path()
-	if not DirAccess.dir_exists_absolute(abs_path):
-		return OK
-	return _remove_dir_recursive(abs_path)
+## 只删 [code]user://gdframe[/code] 下的档案文件（含 sidecar），其他数据不动。
+func _delete_profile_files() -> Error:
+	var profile_path: String = GDFrameSaveManager.USER_ROOT_URL.path_join(
+		GDFrameSaveManager.PROFILE_FILE
+	)
+	if not GDFrameSaveSidecarPaths.remove_all_path_variants(profile_path):
+		return FAILED
+	return OK
 
 func _remove_dir_recursive(abs_path: String) -> Error:
 	if _purge_abs_dir(abs_path):
@@ -1646,7 +1460,7 @@ func _is_external_editor_exec_valid(path: String) -> bool:
 
 
 func _external_editor_ide_label(ide_id: String) -> String:
-	var ide: GDFrameExternalEditorIde = ExternalEditorIde.by_id(ide_id)
+	var ide = ExternalEditorIde.by_id(ide_id)
 	return ide.label if ide != null else "外部编辑器"
 
 
@@ -1666,12 +1480,12 @@ func _guess_external_editor_ide_id(exec_path: String) -> String:
 	var lower: String = exec_path.strip_edges().replace("\\", "/").to_lower()
 	if lower.is_empty():
 		return ""
-	for ide: GDFrameExternalEditorIde in ExternalEditorIde.all():
+	for ide in ExternalEditorIde.all():
 		for prefix: String in ide.prefixes:
 			if lower.contains(prefix):
 				return ide.id
 	var file_name: String = lower.get_file()
-	for ide: GDFrameExternalEditorIde in ExternalEditorIde.all():
+	for ide in ExternalEditorIde.all():
 		for cli_name: String in ide.cli:
 			if file_name == cli_name:
 				return ide.id
@@ -1795,7 +1609,7 @@ func _resolve_external_editor_exec_for_ide(ide_id: String) -> String:
 		return ""
 	if _external_editor_probe_cache.has(ide_id):
 		return _external_editor_probe_cache[ide_id]
-	var ide: GDFrameExternalEditorIde = ExternalEditorIde.by_id(ide_id)
+	var ide = ExternalEditorIde.by_id(ide_id)
 	var resolved: String = ide.first_existing() if ide != null else ""
 	_external_editor_probe_cache[ide_id] = resolved
 	return resolved
@@ -2161,11 +1975,11 @@ func _on_create_ui_pressed() -> void:
 		return
 
 	_set_dock_status("ui", "状态: 已创建 %s（见文件系统 %s）" % [file_stem, ui_dir])
-	_after_asset_tree_change(true, false, false, PackedStringArray([scene_path, script_path]))
+	_after_asset_tree_change(true, PackedStringArray([scene_path, script_path]))
 	_create_ui_name_edit.text = ""
 
 func _on_ui_refresh_list_pressed() -> void:
-	_after_asset_tree_change(true, false, false)
+	_after_asset_tree_change(true)
 
 
 func _on_ui_filter_changed(_new_text: String) -> void:
@@ -2577,8 +2391,6 @@ func _rename_ui_bundle(old_scene_path: String, raw_new_name: String) -> void:
 
 	_after_asset_tree_change(
 		true,
-		false,
-		false,
 		PackedStringArray([new_scene_path, new_script_path]),
 	)
 	_set_dock_status("ui", "状态: 已重命名 %s → %s" % [old_stem, new_stem])
@@ -2672,7 +2484,7 @@ func _delete_ui_bundle(scene_path: String, refresh_registry: bool = true) -> voi
 			notify_paths.append(GDFrameConfig.UI_ROOT_DIR)
 		else:
 			notify_paths.append(GDFrameConfig.PROJECT_ROOT)
-		_after_asset_tree_change(true, false, false, notify_paths)
+		_after_asset_tree_change(true, notify_paths)
 
 	if deleted_any:
 		if refresh_registry:
@@ -2680,6 +2492,30 @@ func _delete_ui_bundle(scene_path: String, refresh_registry: bool = true) -> voi
 	else:
 		if refresh_registry:
 			_set_dock_status("ui", "状态: 删除失败 %s" % scene_name)
+
+# =============================================================================
+# Settings page
+# =============================================================================
+
+## 「设置项」页：各模块提供的设置项（音轨）与 profile 字段，纯编辑器增删与排序。
+func _build_settings_page() -> Control:
+	var page: Control = SettingsItemsPage.new() as Control
+	if page == null:
+		push_error("GDFrame: 无法创建「设置项」页")
+		return Control.new()
+	page.name = "SettingsPage"
+	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_settings_page = page
+	page.call(&"bind_dock", self)
+	return page
+
+
+func _refresh_settings_on_page_show() -> void:
+	if _settings_page == null or not is_instance_valid(_settings_page):
+		return
+	_settings_page.call(&"refresh")
+
 
 # =============================================================================
 # Extension page
@@ -2877,7 +2713,7 @@ func _on_create_ext_pressed() -> void:
 	written_paths.append(GDFrameConfig.PROFILE_SETTINGS_SCRIPT_PATH)
 	written_paths.append(GDFrameConfig.PROFILE_SETTINGS_DEFAULTS_PATH)
 	written_paths.append(GDFrameConfig.AUDIO_CHANNELS_PATH)
-	_after_asset_tree_change(false, false, false, written_paths, true)
+	_after_asset_tree_change(false, written_paths, true)
 	_rebuild_extension_dock_tabs()
 	_create_ext_id_edit.text = ""
 	_create_ext_name_edit.text = ""
@@ -3354,8 +3190,6 @@ func _apply_ext_version_install(ext_id: String, download_url: String, is_new_ins
 		_apply_ext_slots_generate_result(_run_ext_slots_generate())
 		_after_asset_tree_change(
 			false,
-			false,
-			false,
 			PackedStringArray([
 				GDFrameConfig.ext_addon_path(ext_id),
 				GDFrameConfig.EXT_SLOTS_PATH,
@@ -3447,8 +3281,6 @@ func _delete_ext_bundle(ext_dir: String) -> void:
 		EditorInterface.set_plugin_enabled(dir_name, false)
 		_apply_ext_slots_generate_result(_run_ext_slots_generate())
 		_after_asset_tree_change(
-			false,
-			false,
 			false,
 			PackedStringArray([
 				ext_dir,
@@ -3820,984 +3652,6 @@ func _on_check_pressed() -> void:
 
 func _on_source_changed(index: int) -> void:
 	_apply_update_source(index, false, false)
-
-# =============================================================================
-# Pool page
-# =============================================================================
-
-func _pool_column_docs_tooltip() -> String:
-	return (
-		"[对象池 — 各列含义]\n\n"
-		+ "池 key\n"
-		+ "  池注册名（StringName）。与 GDFrame.pool.setup_scene、get_item、recycle_item 使用的 key 相同。\n\n"
-		+ "idle\n"
-		+ "  空闲队列长度：已创建且当前在池中、可被 get_item 直接取走的实例数。\n\n"
-		+ "active\n"
-		+ "  已 get_item 借出、尚未 recycle_item 的实例数。\n\n"
-		+ "peak\n"
-		+ "  peak_active：历史 active 达到过的最大值。\n\n"
-		+ "total_created\n"
-		+ "  累计新建次数（含 setup_scene 第三参预热，以及空闲队列为空时 get_item 触发的创建）。\n\n"
-		+ "max_idle\n"
-		+ "  归还时空闲队列允许保留的最大个数；超过则多出的实例销毁不入池。0 表示不限制。\n\n"
-		+ "max_active\n"
-		+ "  允许同时外借（active）的上限；达到后 get_item 返回 null。0 表示不限制。\n\n"
-		+ "get_rejects\n"
-		+ "  统计字段 active_get_rejects：已达 max_active 时仍调用 get_item 被拒的累计次数；"
-		+ "仅调试器连接时递增，便于在编辑器中观察。\n\n"
-		+ "[排查提示]\n\n"
-		+ "若 active 长期偏高且 total_created 持续上涨，重点排查是否忘记 recycle_item，"
-		+ "或 max_active / max_idle 策略不合理。"
-	)
-
-func _build_pool_page() -> Control:
-	var panel: VBoxContainer = VBoxContainer.new()
-	panel.name = "PoolPage"
-	panel.add_theme_constant_override("separation", 6)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	var filter_row: HBoxContainer = HBoxContainer.new()
-	filter_row.add_theme_constant_override("separation", 8)
-	var filter_label: Label = Label.new()
-	filter_label.text = "池 key 筛选"
-	filter_row.add_child(filter_label)
-	_pool_filter_edit = LineEdit.new()
-	_pool_filter_edit.placeholder_text = "子串匹配，不区分大小写"
-	_pool_filter_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_pool_filter_edit.text_changed.connect(_on_pool_key_filter_changed)
-	filter_row.add_child(_pool_filter_edit)
-	var pool_filter_clear_btn: Button = Button.new()
-	pool_filter_clear_btn.text = "清空"
-	pool_filter_clear_btn.tooltip_text = "清空筛选条件并显示全部池"
-	pool_filter_clear_btn.pressed.connect(_on_pool_filter_clear_pressed)
-	filter_row.add_child(pool_filter_clear_btn)
-	var pool_refresh_btn: Button = Button.new()
-	pool_refresh_btn.text = "刷新"
-	pool_refresh_btn.tooltip_text = "向运行中的游戏请求一次对象池快照（须已 F5 运行且调试器已连接）"
-	pool_refresh_btn.pressed.connect(_on_pool_refresh_pressed)
-	filter_row.add_child(pool_refresh_btn)
-	_pool_auto_refresh_cb = CheckButton.new()
-	_pool_auto_refresh_cb.text = "自动刷新"
-	_pool_auto_refresh_cb.tooltip_text = (
-		"游戏运行且本页可见时，每 %.1f 秒自动向运行时请求一次对象池快照"
-		% _POOL_AUTO_REFRESH_INTERVAL_SEC
-	)
-	_pool_auto_refresh_cb.toggled.connect(_on_pool_auto_refresh_toggled)
-	filter_row.add_child(_pool_auto_refresh_cb)
-	panel.add_child(filter_row)
-
-	var scroll: ScrollContainer = ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.tooltip_text = (
-		"运行游戏后点「刷新」或勾选「自动刷新」向 GDFrame 请求对象池快照。"
-	)
-	panel.add_child(scroll)
-
-	_pool_tree = Tree.new()
-	_pool_tree.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_pool_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_pool_tree.columns = 8
-	_pool_tree.column_titles_visible = true
-	_pool_tree.hide_root = true
-	_pool_tree.set_column_title(0, "池 key")
-	_pool_tree.set_column_title(1, "idle")
-	_pool_tree.set_column_title(2, "active")
-	_pool_tree.set_column_title(3, "peak")
-	_pool_tree.set_column_title(4, "total_created")
-	_pool_tree.set_column_title(5, "max_idle")
-	_pool_tree.set_column_title(6, "max_active")
-	_pool_tree.set_column_title(7, "get_rejects")
-	_pool_tree.set_column_expand(0, true)
-	# 数值列最小宽度均以 total_created 表头文本宽度为准（idle/active/peak/max_*/get_rejects 同宽）。
-	var num_col_min_w: int = 100
-	var col_font: Font = _pool_tree.get_theme_font("font", "Tree") as Font
-	if col_font != null:
-		var col_fs: int = _pool_tree.get_theme_font_size("font_size", "Tree")
-		var sz: Vector2 = col_font.get_string_size(
-			"total_created", HORIZONTAL_ALIGNMENT_LEFT, -1, col_fs
-		)
-		num_col_min_w = int(sz.x) + 28
-	num_col_min_w = maxi(num_col_min_w, 88)
-	for c in range(1, 8):
-		_pool_tree.set_column_expand(c, false)
-		_pool_tree.set_column_custom_minimum_width(c, num_col_min_w)
-	scroll.add_child(_pool_tree)
-
-	var status_row: HBoxContainer = HBoxContainer.new()
-	status_row.add_theme_constant_override("separation", 8)
-	var status_left_pad: Control = Control.new()
-	status_left_pad.custom_minimum_size = Vector2(18, 1)
-	status_row.add_child(status_left_pad)
-
-	var base_ctrl: Control = get_editor_interface().get_base_control()
-	var help_tex: Texture2D = base_ctrl.get_theme_icon(&"Help", &"EditorIcons") as Texture2D
-	var pool_hint_icon: TextureRect = TextureRect.new()
-	pool_hint_icon.mouse_filter = Control.MOUSE_FILTER_STOP
-	pool_hint_icon.mouse_default_cursor_shape = Control.CURSOR_HELP
-	pool_hint_icon.ignore_texture_size = true
-	pool_hint_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	pool_hint_icon.custom_minimum_size = Vector2(22, 22)
-	if help_tex != null:
-		pool_hint_icon.texture = help_tex
-	pool_hint_icon.tooltip_text = _pool_column_docs_tooltip()
-	status_row.add_child(pool_hint_icon)
-
-	_label_pool_status = _dock_status_label()
-	status_row.add_child(_label_pool_status)
-	panel.add_child(status_row)
-	_set_dock_status("pool", "")
-
-	return panel
-
-func _on_pool_key_filter_changed(_new_text: String) -> void:
-	_pool_filter_seq += 1
-	var seq: int = _pool_filter_seq
-	await get_tree().create_timer(_POOL_FILTER_DEBOUNCE_SEC).timeout
-	if seq != _pool_filter_seq:
-		return
-	_refresh_pool_tree_display()
-
-func _on_pool_filter_clear_pressed() -> void:
-	if _pool_filter_edit != null:
-		_pool_filter_edit.text = ""
-
-func _on_pool_auto_refresh_toggled(_on: bool) -> void:
-	_sync_pool_auto_refresh_timer()
-
-func _on_pool_auto_refresh_timeout() -> void:
-	if _pool_auto_refresh_cb == null or not _pool_auto_refresh_cb.button_pressed:
-		return
-	if not _pool_page_visible:
-		_sync_pool_auto_refresh_timer()
-		return
-	if not _editor_is_playing():
-		_sync_pool_auto_refresh_timer()
-		return
-	_request_pool_stats(false)
-
-func _sync_pool_auto_refresh_timer() -> void:
-	if _pool_auto_refresh_timer == null:
-		return
-	var want_auto: bool = (
-		_pool_auto_refresh_cb != null
-		and _pool_auto_refresh_cb.button_pressed
-		and _pool_page_visible
-	)
-	if not want_auto:
-		_pool_auto_refresh_timer.stop()
-		return
-	if _editor_is_playing():
-		_pool_auto_refresh_timer.wait_time = 0.1
-		if _pool_auto_refresh_timer.is_stopped():
-			_request_pool_stats(false)
-	else:
-		_pool_auto_refresh_timer.wait_time = 0.5
-	_pool_auto_refresh_timer.start()
-
-func _request_pool_stats(show_errors: bool = false) -> bool:
-	if not _editor_is_playing():
-		if show_errors:
-			_set_dock_status("pool", "请先运行游戏（F5）。")
-		return false
-	if _pool_debug_plugin == null:
-		if show_errors:
-			_set_dock_status("pool", "调试插件未就绪。")
-		return false
-	if not _pool_debug_plugin.request_pool_stats():
-		if show_errors:
-			_set_dock_status("pool", "调试器未连接，请先 F5 运行。")
-		return false
-	return true
-
-func _on_pool_refresh_pressed() -> void:
-	_request_pool_stats(true)
-
-func _refresh_pool_tree_display() -> void:
-	if _pool_tree == null:
-		return
-	var stats: Dictionary = _pool_last_stats
-	if stats.is_empty():
-		_pool_tree.clear()
-		_set_dock_status("pool","尚未收到运行时数据。")
-		return
-	_pool_tree.clear()
-	var root: TreeItem = _pool_tree.create_item()
-	var keys: Array = stats.keys()
-	keys.sort()
-	var filter_raw: String = ""
-	if _pool_filter_edit != null:
-		filter_raw = _pool_filter_edit.text.strip_edges()
-	var filter_lower: String = filter_raw.to_lower()
-	var keys_visible: Array = []
-	if filter_lower.is_empty():
-		keys_visible = keys.duplicate()
-	else:
-		for kk: Variant in keys:
-			if String(kk).to_lower().contains(filter_lower):
-				keys_visible.append(kk)
-	var sum_idle: int = 0
-	var sum_active: int = 0
-	var sum_created: int = 0
-	var sum_rejects: int = 0
-	for k: Variant in keys_visible:
-		var row: Variant = stats[k]
-		if row is not Dictionary:
-			continue
-		var d: Dictionary = row as Dictionary
-		var it: TreeItem = _pool_tree.create_item(root)
-		it.set_text(0, str(k))
-		var idle_v: int = int(d.get("idle", 0))
-		var active_v: int = int(d.get("active", 0))
-		var peak_v: int = int(d.get("peak_active", 0))
-		var total_v: int = int(d.get("total_created", 0))
-		var max_idle_v: int = int(d.get("max_idle", 0))
-		var max_active_v: int = int(d.get("max_active", 0))
-		var rejects_v: int = int(d.get("active_get_rejects", 0))
-		it.set_text(1, str(idle_v))
-		it.set_text(2, str(active_v))
-		it.set_text(3, str(peak_v))
-		it.set_text(4, str(total_v))
-		it.set_text(5, str(max_idle_v))
-		it.set_text(6, str(max_active_v))
-		it.set_text(7, str(rejects_v))
-		sum_idle += idle_v
-		sum_active += active_v
-		sum_created += total_v
-		sum_rejects += rejects_v
-		if max_active_v > 0 and active_v >= max_active_v:
-			it.set_custom_color(2, Color(1.0, 0.65, 0.2))
-		elif active_v > 0 and max_active_v == 0:
-			it.set_custom_color(2, Color(0.75, 0.75, 0.85))
-		if rejects_v > 0:
-			it.set_custom_color(7, Color(1.0, 0.45, 0.35))
-
-	var t: Dictionary = Time.get_datetime_dict_from_system()
-	var shown: int = keys_visible.size()
-	var total: int = keys.size()
-	_set_dock_status("pool",
-		"快照 %02d:%02d:%02d  |  显示 %d/%d 池  |  Σ idle=%d  active=%d  total_created=%d  get_rejects=%d"
-		% [
-			int(t.get("hour", 0)),
-			int(t.get("minute", 0)),
-			int(t.get("second", 0)),
-			shown,
-			total,
-			sum_idle,
-			sum_active,
-			sum_created,
-			sum_rejects,
-		]
-	)
-
-func _on_runtime_pool_stats(stats: Dictionary) -> void:
-	_pool_last_stats = stats.duplicate()
-	_refresh_pool_tree_display()
-
-# =============================================================================
-# FSM page
-# =============================================================================
-
-func _build_fsm_page() -> Control:
-	var panel: VBoxContainer = VBoxContainer.new()
-	panel.add_theme_constant_override("separation", 6)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	var create_row: HBoxContainer = HBoxContainer.new()
-	create_row.add_theme_constant_override("separation", 6)
-	panel.add_child(create_row)
-
-	var new_lbl: Label = Label.new()
-	new_lbl.text = "新建状态机"
-	create_row.add_child(new_lbl)
-
-	_fsm_name_edit = LineEdit.new()
-	_fsm_name_edit.placeholder_text = "player → fsm_player.gd"
-	_fsm_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	create_row.add_child(_fsm_name_edit)
-
-	var create_btn: Button = Button.new()
-	create_btn.text = "创建"
-	create_btn.tooltip_text = "生成 registry 与 states 目录；状态请用「添加状态」创建"
-	create_btn.pressed.connect(_on_create_fsm_pressed)
-	create_row.add_child(create_btn)
-
-	_label_fsm_status = _dock_status_label()
-	panel.add_child(_label_fsm_status)
-
-	var pick_row: HBoxContainer = HBoxContainer.new()
-	pick_row.add_theme_constant_override("separation", 6)
-	panel.add_child(pick_row)
-
-	_fsm_machine_option = OptionButton.new()
-	_fsm_machine_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_fsm_machine_option.tooltip_text = "当前编辑的状态机"
-	_fsm_machine_option.item_selected.connect(_on_fsm_machine_selected)
-	pick_row.add_child(_fsm_machine_option)
-
-	var refresh_btn: Button = Button.new()
-	refresh_btn.text = "刷新"
-	refresh_btn.tooltip_text = "重新扫描状态机并更新 GDFrameConstants"
-	refresh_btn.pressed.connect(_on_fsm_refresh_list_pressed)
-	pick_row.add_child(refresh_btn)
-
-	_fsm_delete_machine_btn = Button.new()
-	_fsm_delete_machine_btn.text = "删除状态机"
-	_fsm_delete_machine_btn.tooltip_text = "删除整个 fsm_xxx 目录"
-	_fsm_delete_machine_btn.pressed.connect(_on_fsm_delete_machine_requested)
-	pick_row.add_child(_fsm_delete_machine_btn)
-
-	var rename_machine_btn: Button = Button.new()
-	rename_machine_btn.text = "更名"
-	rename_machine_btn.tooltip_text = "重命名状态机目录、registry 与 states 脚本"
-	rename_machine_btn.pressed.connect(_on_fsm_rename_machine_requested)
-	pick_row.add_child(rename_machine_btn)
-
-	_fsm_delete_machine_dialog = ConfirmationDialog.new()
-	_configure_plugin_modal_dialog(_fsm_delete_machine_dialog)
-	_fsm_delete_machine_dialog.title = "确认删除状态机"
-	_fsm_delete_machine_dialog.ok_button_text = "删除"
-	_fsm_delete_machine_dialog.confirmed.connect(_on_fsm_delete_machine_confirmed)
-	panel.add_child(_fsm_delete_machine_dialog)
-
-	_fsm_delete_state_dialog = ConfirmationDialog.new()
-	_configure_plugin_modal_dialog(_fsm_delete_state_dialog)
-	_fsm_delete_state_dialog.title = "确认删除状态"
-	_fsm_delete_state_dialog.ok_button_text = "删除"
-	_fsm_delete_state_dialog.confirmed.connect(_on_fsm_delete_state_confirmed)
-	panel.add_child(_fsm_delete_state_dialog)
-
-	_rename_fsm_machine_dialog = AcceptDialog.new()
-	_configure_plugin_modal_dialog(_rename_fsm_machine_dialog)
-	_rename_fsm_machine_dialog.title = "重命名状态机"
-	_rename_fsm_machine_dialog.min_size = Vector2i(420, 120)
-	_rename_fsm_machine_dialog.confirmed.connect(_on_rename_fsm_machine_confirmed)
-	panel.add_child(_rename_fsm_machine_dialog)
-	var rename_machine_builtin: Label = _rename_fsm_machine_dialog.get_label()
-	if rename_machine_builtin != null:
-		rename_machine_builtin.hide()
-	var rename_machine_box: VBoxContainer = VBoxContainer.new()
-	rename_machine_box.add_theme_constant_override("separation", 10)
-	rename_machine_box.custom_minimum_size = Vector2(380, 0)
-	_rename_fsm_machine_dialog.add_child(rename_machine_box)
-	_label_rename_fsm_machine_target = Label.new()
-	_label_rename_fsm_machine_target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rename_machine_box.add_child(_label_rename_fsm_machine_target)
-	_rename_fsm_machine_name_edit = LineEdit.new()
-	_rename_fsm_machine_name_edit.placeholder_text = "player → fsm_player"
-	_rename_fsm_machine_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rename_machine_box.add_child(_rename_fsm_machine_name_edit)
-
-	_rename_fsm_state_dialog = AcceptDialog.new()
-	_configure_plugin_modal_dialog(_rename_fsm_state_dialog)
-	_rename_fsm_state_dialog.title = "重命名状态"
-	_rename_fsm_state_dialog.min_size = Vector2i(420, 120)
-	_rename_fsm_state_dialog.confirmed.connect(_on_rename_fsm_state_confirmed)
-	panel.add_child(_rename_fsm_state_dialog)
-	var rename_state_builtin: Label = _rename_fsm_state_dialog.get_label()
-	if rename_state_builtin != null:
-		rename_state_builtin.hide()
-	var rename_state_box: VBoxContainer = VBoxContainer.new()
-	rename_state_box.add_theme_constant_override("separation", 10)
-	rename_state_box.custom_minimum_size = Vector2(380, 0)
-	_rename_fsm_state_dialog.add_child(rename_state_box)
-	_label_rename_fsm_state_target = Label.new()
-	_label_rename_fsm_state_target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rename_state_box.add_child(_label_rename_fsm_state_target)
-	_rename_fsm_state_name_edit = LineEdit.new()
-	_rename_fsm_state_name_edit.placeholder_text = "idle → idle.gd"
-	_rename_fsm_state_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rename_state_box.add_child(_rename_fsm_state_name_edit)
-
-	var add_row: HBoxContainer = HBoxContainer.new()
-	add_row.add_theme_constant_override("separation", 6)
-	panel.add_child(add_row)
-
-	var list_lbl: Label = Label.new()
-	list_lbl.text = "添加状态"
-	add_row.add_child(list_lbl)
-
-	_fsm_new_state_edit = LineEdit.new()
-	_fsm_new_state_edit.placeholder_text = "idle → idle.gd"
-	_fsm_new_state_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_row.add_child(_fsm_new_state_edit)
-
-	var add_btn: Button = Button.new()
-	add_btn.text = "添加状态"
-	add_btn.tooltip_text = "生成 states 脚本并更新 registry"
-	add_btn.pressed.connect(_on_fsm_add_state_pressed)
-	add_row.add_child(add_btn)
-
-	var states_scroll: ScrollContainer = ScrollContainer.new()
-	states_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	states_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	states_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(states_scroll)
-
-	_fsm_states_rows = VBoxContainer.new()
-	_fsm_states_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_fsm_states_rows.add_theme_constant_override("separation", 2)
-	states_scroll.add_child(_fsm_states_rows)
-
-	_set_dock_status("fsm", "")
-	return panel
-
-func _fsm_registry_path(fsm_id: String) -> String:
-	return "%s/%s/%s_registry.gd" % [GDFrameConfig.FSM_ROOT, fsm_id, fsm_id]
-
-func _load_fsm_registry(fsm_id: String) -> GDFrameFSMRegistryBase:
-	var reg_path: Variant = _fsm_registry_path(fsm_id)
-	if not FileAccess.file_exists(reg_path):
-		return null
-	# Dock 频繁改写 registry；须 IGNORE，否则仍可能读到旧 Script 的 state_keys。
-	var scr: Script = ResourceLoader.load(
-		reg_path, "", ResourceLoader.CACHE_MODE_IGNORE
-	) as Script
-	if scr == null:
-		return null
-	var reg_obj: Object = scr.new()
-	if reg_obj is GDFrameFSMRegistryBase:
-		return reg_obj as GDFrameFSMRegistryBase
-	return null
-
-func _collect_fsm_ids() -> Array[String]:
-	var out: Array[String] = []
-	for reg_path: String in _get_fsm_registry_paths():
-		out.append(reg_path.get_file().get_basename().trim_suffix("_registry"))
-	return out
-
-func _fsm_selected_id() -> String:
-	if _fsm_machine_option == null:
-		return ""
-	var idx: int = _fsm_machine_option.selected
-	if idx < 0 or idx >= _fsm_machine_option.item_count:
-		return ""
-	var text: String = _fsm_machine_option.get_item_text(idx)
-	if text.begins_with("("):
-		return ""
-	return text
-
-func _on_fsm_refresh_list_pressed() -> void:
-	_after_asset_tree_change(false, true, false)
-
-
-func _refresh_fsm_ui() -> void:
-	_refresh_fsm_machine_option()
-	_fsm_refresh_states_list()
-
-func _refresh_fsm_machine_option() -> void:
-	if _fsm_machine_option == null:
-		return
-	_fsm_machine_option.clear()
-	var ids: Variant = _collect_fsm_ids()
-	for id in ids:
-		_fsm_machine_option.add_item(id)
-	if ids.is_empty():
-		_fsm_machine_option.add_item("(暂无)")
-		_fsm_machine_option.set_item_disabled(0, true)
-	else:
-		_fsm_machine_option.select(0)
-	_on_fsm_machine_selected(_fsm_machine_option.selected)
-
-func _on_fsm_machine_selected(_index: int) -> void:
-	var sid: Variant = _fsm_selected_id()
-	if sid.is_empty():
-		_set_dock_status("fsm","就绪")
-	else:
-		_set_dock_status("fsm",sid)
-	_fsm_refresh_states_list()
-
-func _fsm_refresh_states_list() -> void:
-	if _fsm_states_rows == null:
-		return
-	for child in _fsm_states_rows.get_children():
-		child.queue_free()
-	var sid: Variant = _fsm_selected_id()
-	if sid.is_empty():
-		return
-	var keys: Variant = _get_fsm_state_keys(sid)
-	if keys.is_empty():
-		var warn: Label = Label.new()
-		warn.text = "尚未创建任何状态，请在上方输入名称后点击「添加状态」。"
-		warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		warn.add_theme_color_override("font_color", Color(0.95, 0.55, 0.2))
-		_fsm_states_rows.add_child(warn)
-		return
-
-	var row_i: int = 0
-	for st in keys:
-		var actions: Array = [
-			{
-				"text": "定位",
-				"tip": "在文件系统 Dock 中选中该脚本",
-				"callback": _on_fsm_navigate_state_in_filesystem.bind(sid, st),
-			},
-			{
-				"text": "打开",
-				"tip": "在脚本编辑器中打开",
-				"callback": _on_fsm_open_state_script.bind(sid, st),
-			},
-			{
-				"text": "更名",
-				"tip": "重命名状态脚本并更新 registry",
-				"callback": _on_fsm_rename_state_requested.bind(sid, st),
-			},
-			{
-				"text": "删除",
-				"tip": "删除此状态脚本并刷新 registry",
-				"callback": _on_fsm_delete_state_requested.bind(sid, st),
-			},
-		]
-		_fsm_states_rows.add_child(
-			_build_dock_asset_row(
-				row_i,
-				st,
-				"%s/%s/states/%s.gd" % [GDFrameConfig.FSM_ROOT, sid, st],
-				actions,
-			)
-		)
-		row_i += 1
-
-func _on_create_fsm_pressed() -> void:
-	if not _require_editor_not_playing("fsm", "创建状态机"):
-		return
-	var raw: String = _fsm_name_edit.text.strip_edges()
-	if raw.is_empty():
-		_set_dock_status("fsm","请输入状态机名称")
-		return
-	var id: Variant = AssetNameUtil.normalize_fsm_name(raw)
-	var dir_path: String = "%s/%s" % [GDFrameConfig.FSM_ROOT, id]
-	var reg_path: String = "%s/%s_registry.gd" % [dir_path, id]
-	var states_dir: String = "%s/states" % dir_path
-	var dir_err: Error = _ensure_res_dir(states_dir)
-	if dir_err != OK:
-		_set_dock_status("fsm", "无法创建目录（错误 %s）" % dir_err)
-		return
-
-	if _res_file_exists(reg_path):
-		_set_dock_status("fsm","已存在 %s" % id)
-		return
-
-	var states: Array[String] = []
-	if not _write_fsm_registry_file(id, states):
-		_set_dock_status("fsm","创建 registry 失败")
-		return
-	_set_dock_status("fsm","已创建 %s（请添加状态）" % id)
-	_after_asset_tree_change(false, true, false, PackedStringArray([reg_path]))
-	_select_fsm_option_by_id(id)
-	_fsm_name_edit.text = ""
-
-func _select_fsm_option_by_id(id: String) -> void:
-	if _fsm_machine_option == null:
-		return
-	for i in range(_fsm_machine_option.item_count):
-		if _fsm_machine_option.get_item_text(i) == id:
-			_fsm_machine_option.select(i)
-			_on_fsm_machine_selected(i)
-			break
-
-func _on_fsm_add_state_pressed() -> void:
-	if not _require_editor_not_playing("fsm", "添加状态"):
-		return
-	var sid: Variant = _fsm_selected_id()
-	if sid.is_empty():
-		_set_dock_status("fsm","请先选择状态机")
-		return
-	var key: Variant = AssetNameUtil.clean_alnum_underscore(_fsm_new_state_edit.text.strip_edges())
-	if key.is_empty():
-		_set_dock_status("fsm","请输入合法状态名")
-		return
-	_asset_scan_fsm_states.erase(sid)
-	var states: Array[String] = _collect_fsm_state_keys(sid).duplicate()
-	if key in states:
-		_set_dock_status("fsm","已存在 %s" % key)
-		return
-	states.append(key)
-	states.sort()
-	if not _write_state_script_if_missing(sid, key):
-		_set_dock_status("fsm","创建状态脚本失败")
-		return
-	var reg_path: Variant = _fsm_registry_path(sid)
-	var script_path: Variant = _fsm_state_script_path(sid, key)
-	if not _write_fsm_registry_file(sid, states):
-		_set_dock_status("fsm","写入 registry 失败")
-		return
-	_fsm_new_state_edit.text = ""
-	_set_dock_status("fsm","已添加 %s" % key)
-	var states_dir: String = script_path.get_base_dir()
-	_after_asset_tree_change(
-		false,
-		false,
-		true,
-		PackedStringArray([reg_path, script_path, states_dir]),
-	)
-
-func _collect_fsm_state_keys(fsm_id: String) -> Array[String]:
-	var reg: GDFrameFSMRegistryBase = _load_fsm_registry(fsm_id)
-	if reg == null:
-		return []
-	var out: Array[String] = []
-	for k: StringName in reg.state_keys():
-		out.append(String(k))
-	out.sort()
-	return out
-
-func _fsm_state_script_path(sid: String, st: String) -> String:
-	return "%s/%s/states/%s.gd" % [GDFrameConfig.FSM_ROOT, sid, st]
-
-func _build_fsm_state_template() -> String:
-	return """extends \"%s\"
-
-
-func _enter() -> void:
-	pass
-
-
-func _exit() -> void:
-	pass
-
-
-func _process(_delta: float) -> void:
-	pass
-
-
-func _physics_process(_delta: float) -> void:
-	pass
-
-
-func _input(_event: InputEvent) -> void:
-	pass
-""" % FSM_STATE_SCRIPT_PATH
-
-func _build_fsm_registry_gd(fsm_id: String, states: Array[String]) -> String:
-	var match_lines: PackedStringArray = PackedStringArray()
-	for st in states:
-		var script_res: String = "%s/%s/states/%s.gd" % [GDFrameConfig.FSM_ROOT, fsm_id, st]
-		match_lines.append("\t\t&\"%s\":" % st)
-		match_lines.append("\t\t\treturn preload(\"%s\") as Script" % script_res)
-	var keys_parts: PackedStringArray = PackedStringArray()
-	for st in states:
-		keys_parts.append("&\"%s\"" % st)
-	var keys_inner: String = ", ".join(keys_parts)
-	return """## Auto-generated by GDFrame — 由 Dock 维护，勿手改 state_script 的 match。
-extends \"%s\"
-
-
-func machine_id() -> StringName:
-	return &\"%s\"
-
-
-func state_keys() -> Array[StringName]:
-	return [%s]
-
-
-func state_script(state_key: StringName) -> Script:
-	match state_key:
-%s
-		_:
-			return null
-""" % [
-		FSM_REGISTRY_SCRIPT_PATH,
-		fsm_id,
-		keys_inner,
-		"\n".join(match_lines),
-	]
-
-func _write_fsm_registry_file(fsm_id: String, states: Array[String]) -> bool:
-	var path: String = "%s/%s/%s_registry.gd" % [GDFrameConfig.FSM_ROOT, fsm_id, fsm_id]
-	if _write_res_text(path, _build_fsm_registry_gd(fsm_id, states)) != OK:
-		return false
-	_asset_scan_fsm_states[fsm_id] = states.duplicate()
-	return true
-
-func _write_state_script_if_missing(fsm_id: String, state_key: String) -> bool:
-	var script_path: Variant = _fsm_state_script_path(fsm_id, state_key)
-	if _res_file_exists(script_path):
-		return true
-	var states_dir: String = "%s/%s/states" % [GDFrameConfig.FSM_ROOT, fsm_id]
-	if _ensure_res_dir(states_dir) != OK:
-		return false
-	return _write_res_text(script_path, _build_fsm_state_template()) == OK
-
-func _write_gd_file_with_uid(path: String, text: String, uid_source_path: String) -> bool:
-	if _write_res_text(path, text) != OK:
-		return false
-	var uid: Variant = _read_resource_uid("%s.uid" % uid_source_path)
-	if uid.is_empty():
-		return true
-	return _write_res_text("%s.uid" % path, uid + "\n") == OK
-
-func _on_fsm_navigate_state_in_filesystem(sid: String, st: String) -> void:
-	var path: Variant = _fsm_state_script_path(sid, st)
-	if _navigate_script_in_filesystem(path):
-		_set_dock_status("fsm","已定位 %s" % st)
-	else:
-		_set_dock_status("fsm","未找到脚本")
-
-func _on_fsm_open_state_script(sid: String, st: String) -> void:
-	var path: Variant = _fsm_state_script_path(sid, st)
-	if _open_script_in_editor(path):
-		_set_dock_status("fsm","已打开 %s" % st)
-	else:
-		_set_dock_status("fsm","未找到或无法打开脚本")
-
-func _on_fsm_rename_machine_requested() -> void:
-	if not _require_editor_not_playing("fsm", "重命名状态机"):
-		return
-	var sid: Variant = _fsm_selected_id()
-	if sid.is_empty():
-		_set_dock_status("fsm","没有可重命名的状态机")
-		return
-	_pending_rename_fsm_id = sid
-	_rename_fsm_machine_name_edit.text = ""
-	_label_rename_fsm_machine_target.text = "将 %s 重命名为：" % sid
-	_rename_fsm_machine_dialog.popup_centered(Vector2i(420, 120))
-	_rename_fsm_machine_name_edit.grab_focus()
-
-func _on_rename_fsm_machine_confirmed() -> void:
-	if _pending_rename_fsm_id.is_empty():
-		return
-	var raw_name: String = _rename_fsm_machine_name_edit.text.strip_edges()
-	if raw_name.is_empty():
-		_set_dock_status("fsm","请输入新状态机名称")
-		return
-	var old_id: Variant = _pending_rename_fsm_id
-	_pending_rename_fsm_id = ""
-	_rename_fsm_machine_bundle.call_deferred(old_id, raw_name)
-
-func _rename_fsm_machine_bundle(old_id: String, raw_new_name: String) -> void:
-	var new_id: Variant = AssetNameUtil.normalize_fsm_name(raw_new_name)
-	if new_id == old_id:
-		_set_dock_status("fsm","名称未变化")
-		return
-	var old_reg: Variant = _fsm_registry_path(old_id)
-	if not FileAccess.file_exists(old_reg):
-		_set_dock_status("fsm","源 registry 缺失，无法重命名")
-		return
-	var new_dir: String = "%s/%s" % [GDFrameConfig.FSM_ROOT, new_id]
-	if _res_dir_exists(new_dir):
-		_set_dock_status("fsm","目标已存在 %s" % new_id)
-		return
-
-	var states: Variant = _get_fsm_state_keys(old_id)
-	var states_dir: String = "%s/states" % new_dir
-	var dir_err: Variant = _ensure_res_dir(states_dir)
-	if dir_err != OK:
-		_set_dock_status("fsm","无法创建目录 %s（错误 %s）" % [new_dir, dir_err])
-		return
-
-	for st in states:
-		var old_script: Variant = _fsm_state_script_path(old_id, st)
-		var new_script: Variant = _fsm_state_script_path(new_id, st)
-		if not FileAccess.file_exists(old_script):
-			_set_dock_status("fsm","源状态脚本缺失：%s" % st)
-			_try_remove_empty_dir(states_dir, GDFrameConfig.FSM_ROOT)
-			_try_remove_empty_dir(new_dir, GDFrameConfig.FSM_ROOT)
-			return
-		var script_text: String = FileAccess.get_file_as_string(old_script)
-		script_text = _replace_gdframe_constants_refs(script_text, old_id, new_id)
-		if not _write_gd_file_with_uid(new_script, script_text, old_script):
-			_set_dock_status("fsm","无法写入状态脚本 %s" % st)
-			_try_remove_empty_dir(states_dir, GDFrameConfig.FSM_ROOT)
-			_try_remove_empty_dir(new_dir, GDFrameConfig.FSM_ROOT)
-			return
-
-	if not _write_fsm_registry_file(new_id, states):
-		_set_dock_status("fsm","写入 registry 失败")
-		_try_remove_empty_dir(states_dir, GDFrameConfig.FSM_ROOT)
-		_try_remove_empty_dir(new_dir, GDFrameConfig.FSM_ROOT)
-		return
-	var new_reg: Variant = _fsm_registry_path(new_id)
-	var old_reg_uid: Variant = _read_resource_uid("%s.uid" % old_reg)
-	if not old_reg_uid.is_empty():
-		var uid_file: FileAccess = FileAccess.open("%s.uid" % new_reg, FileAccess.WRITE)
-		if uid_file != null:
-			uid_file.store_string(old_reg_uid + "\n")
-			uid_file = null
-
-	_delete_fsm_machine_bundle(old_id, false)
-
-	_after_asset_tree_change(false, true)
-	_select_fsm_option_by_id(new_id)
-	_set_dock_status("fsm","已重命名 %s → %s" % [old_id, new_id])
-
-func _on_fsm_rename_state_requested(sid: String, st: String) -> void:
-	if not _require_editor_not_playing("fsm", "重命名状态"):
-		return
-	if sid.is_empty():
-		_set_dock_status("fsm","请先选择状态机")
-		return
-	_pending_rename_state_sid = sid
-	_pending_rename_state_key = st
-	_rename_fsm_state_name_edit.text = ""
-	_label_rename_fsm_state_target.text = "将状态「%s」重命名为：" % st
-	_rename_fsm_state_dialog.popup_centered(Vector2i(420, 120))
-	_rename_fsm_state_name_edit.grab_focus()
-
-func _on_rename_fsm_state_confirmed() -> void:
-	if _pending_rename_state_sid.is_empty() or _pending_rename_state_key.is_empty():
-		return
-	var raw_name: String = _rename_fsm_state_name_edit.text.strip_edges()
-	if raw_name.is_empty():
-		_set_dock_status("fsm","请输入新状态名")
-		return
-	var sid: Variant = _pending_rename_state_sid
-	var old_key: Variant = _pending_rename_state_key
-	_pending_rename_state_sid = ""
-	_pending_rename_state_key = ""
-	_rename_fsm_state_bundle.call_deferred(sid, old_key, raw_name)
-
-func _rename_fsm_state_bundle(sid: String, old_key: String, raw_new_key: String) -> void:
-	var new_key: Variant = AssetNameUtil.clean_alnum_underscore(raw_new_key)
-	if new_key.is_empty():
-		_set_dock_status("fsm","请输入合法状态名")
-		return
-	if new_key == old_key:
-		_set_dock_status("fsm","名称未变化")
-		return
-	var old_script: Variant = _fsm_state_script_path(sid, old_key)
-	var new_script: Variant = _fsm_state_script_path(sid, new_key)
-	if FileAccess.file_exists(new_script):
-		_set_dock_status("fsm","目标已存在 %s" % new_key)
-		return
-	if not FileAccess.file_exists(old_script):
-		_set_dock_status("fsm","源状态脚本缺失，无法重命名")
-		return
-
-	var script_text: String = FileAccess.get_file_as_string(old_script)
-	script_text = _replace_gdframe_constants_refs(script_text, old_key, new_key)
-	if not _write_gd_file_with_uid(new_script, script_text, old_script):
-		_set_dock_status("fsm","无法写入状态脚本 %s" % new_key)
-		return
-
-	_asset_scan_fsm_states.erase(sid)
-	var states: Array[String] = _collect_fsm_state_keys(sid).duplicate()
-	if old_key in states:
-		states.erase(old_key)
-	if not new_key in states:
-		states.append(new_key)
-	states.sort()
-	if not _write_fsm_registry_file(sid, states):
-		_set_dock_status("fsm","更新 registry 失败")
-		_safe_delete("%s.uid" % new_script)
-		_safe_delete(new_script)
-		return
-
-	for st in states:
-		var script_path: Variant = _fsm_state_script_path(sid, st)
-		if not FileAccess.file_exists(script_path):
-			continue
-		var existing: String = FileAccess.get_file_as_string(script_path)
-		var updated: Variant = _replace_gdframe_constants_refs(existing, old_key, new_key)
-		if updated == existing:
-			continue
-		var patch_file: FileAccess = FileAccess.open(script_path, FileAccess.WRITE)
-		if patch_file == null:
-			_set_dock_status("fsm","更新引用失败：%s" % st)
-			return
-		patch_file.store_string(updated)
-		patch_file = null
-
-	_safe_delete("%s.uid" % old_script)
-	_safe_delete(old_script)
-
-	_after_asset_tree_change(false, false, true)
-	_set_dock_status("fsm","已重命名状态 %s → %s" % [old_key, new_key])
-
-func _on_fsm_delete_state_requested(sid: String, st: String) -> void:
-	if not _require_editor_not_playing("fsm", "删除状态"):
-		return
-	if sid.is_empty():
-		_set_dock_status("fsm","请先选择状态机")
-		return
-	_pending_delete_state_sid = sid
-	_pending_delete_state_key = st
-	_fsm_delete_state_dialog.dialog_text = "确认删除状态「%s」吗？\n将删除对应脚本并更新 registry。" % st
-	_fsm_delete_state_dialog.popup_centered(Vector2i(420, 140))
-
-func _on_fsm_delete_state_confirmed() -> void:
-	var sid: Variant = _pending_delete_state_sid
-	var key: Variant = _pending_delete_state_key
-	_pending_delete_state_sid = ""
-	_pending_delete_state_key = ""
-	if sid.is_empty() or key.is_empty():
-		return
-	_delete_fsm_state_bundle.call_deferred(sid, key)
-
-func _delete_fsm_state_bundle(sid: String, key: String) -> void:
-	_asset_scan_fsm_states.erase(sid)
-	var states: Array[String] = _collect_fsm_state_keys(sid).duplicate()
-	if not key in states:
-		_set_dock_status("fsm","磁盘上无此状态")
-		return
-	states.erase(key)
-	states.sort()
-	var script_path: Variant = _fsm_state_script_path(sid, key)
-	var reg_path: Variant = _fsm_registry_path(sid)
-	_safe_delete("%s.uid" % script_path)
-	_safe_delete(script_path)
-	if not _write_fsm_registry_file(sid, states):
-		_set_dock_status("fsm","删除文件后重写 registry 失败")
-		return
-	_set_dock_status("fsm","已删除状态 %s" % key)
-	_after_asset_tree_change(false, false, true, PackedStringArray([reg_path, script_path]))
-
-func _on_fsm_delete_machine_requested() -> void:
-	if not _require_editor_not_playing("fsm", "删除状态机"):
-		return
-	var sid: Variant = _fsm_selected_id()
-	if sid.is_empty():
-		_set_dock_status("fsm","没有可删除的状态机")
-		return
-	_pending_delete_fsm_id = sid
-	_fsm_delete_machine_dialog.dialog_text = "确认删除状态机 %s 吗？\n将删除 registry、states 下全部脚本及目录（不可恢复）。" % sid
-	_fsm_delete_machine_dialog.popup_centered(Vector2i(480, 160))
-
-func _on_fsm_delete_machine_confirmed() -> void:
-	if _pending_delete_fsm_id.is_empty():
-		return
-	var fsm_id: String = _pending_delete_fsm_id
-	_pending_delete_fsm_id = ""
-	_delete_fsm_machine_bundle.call_deferred(fsm_id)
-
-func _delete_fsm_machine_bundle(fsm_id: String, refresh_registry: bool = true) -> void:
-	if fsm_id.is_empty():
-		return
-	var machine_dir: String = "%s/%s" % [GDFrameConfig.FSM_ROOT, fsm_id]
-	_asset_scan_fsm_states.erase(fsm_id)
-	var deleted_any: bool = false
-	if _res_dir_exists(machine_dir):
-		deleted_any = _purge_abs_dir(ProjectSettings.globalize_path(machine_dir))
-	else:
-		for st: String in _collect_fsm_state_keys(fsm_id):
-			var sp: String = _fsm_state_script_path(fsm_id, st)
-			deleted_any = _safe_delete("%s.uid" % sp) or deleted_any
-			deleted_any = _safe_delete(sp) or deleted_any
-		var reg: String = _fsm_registry_path(fsm_id)
-		deleted_any = _safe_delete("%s.uid" % reg) or deleted_any
-		deleted_any = _safe_delete(reg) or deleted_any
-	_try_remove_empty_dir(GDFrameConfig.FSM_ROOT, GDFrameConfig.PROJECT_ROOT)
-	if refresh_registry:
-		var notify_path: String = machine_dir
-		if not _res_dir_exists(machine_dir):
-			if _res_dir_exists(GDFrameConfig.FSM_ROOT):
-				notify_path = GDFrameConfig.FSM_ROOT
-			else:
-				notify_path = GDFrameConfig.PROJECT_ROOT
-		_after_asset_tree_change(false, true, false, PackedStringArray([notify_path]))
-	if deleted_any:
-		if refresh_registry:
-			_set_dock_status("fsm", "已删除状态机 %s" % fsm_id)
-	else:
-		if refresh_registry:
-			_set_dock_status("fsm", "未删除任何文件（可能已不存在）")
-
-# =============================================================================
-# Constants generation
-# =============================================================================
-
 func _gdc_const_identifier(id: String) -> String:
 	if id.is_valid_identifier() and not id.begins_with("_"):
 		return id.to_upper()
@@ -4821,12 +3675,11 @@ func _replace_gdframe_constants_refs(
 
 
 func _ensure_project_root_dir() -> void:
-	# 仅保证工程根存在；ui/、fsm/ 在首次创建对应资产时再递归创建，避免空目录。
+	# 仅保证工程根存在；ui/ 在首次创建对应资产时再递归创建，避免空目录。
 	DirAccess.make_dir_recursive_absolute(
 		ProjectSettings.globalize_path(GDFrameConfig.PROJECT_ROOT)
 	)
 	_try_remove_empty_dir(GDFrameConfig.UI_ROOT_DIR, GDFrameConfig.PROJECT_ROOT)
-	_try_remove_empty_dir(GDFrameConfig.FSM_ROOT, GDFrameConfig.PROJECT_ROOT)
 
 
 func _ensure_generated_dir() -> void:
@@ -4945,7 +3798,7 @@ func _project_scaffold_sync_paths() -> PackedStringArray:
 		GDFrameConfig.GENERATED_DIR,
 		GDFrameConfig.EXT_ADDONS_DIR,
 	])
-	for optional_dir: String in [GDFrameConfig.UI_ROOT_DIR, GDFrameConfig.FSM_ROOT]:
+	for optional_dir: String in [GDFrameConfig.UI_ROOT_DIR]:
 		if _res_dir_exists(optional_dir):
 			paths.append(optional_dir)
 	for file_path: String in [
@@ -5039,37 +3892,6 @@ func _regenerate_constants_registry(sync_filesystem: bool = true) -> bool:
 			var cn: Variant = _gdc_const_identifier(ui_id)
 			lines.append("const %s: StringName = &\"%s\"" % [cn, ui_id])
 	lines.append("")
-	var reg_paths: Array[String] = _get_fsm_registry_paths()
-	lines.append("# --- FSM machines ([method GDFrame.fsm.bind] machine_id) ---")
-	if reg_paths.is_empty():
-		lines.append("# （尚无状态机）")
-	else:
-		var state_keys: Dictionary = {}
-		for reg_path: String in reg_paths:
-			var fsm_id: String = reg_path.get_file().get_basename().trim_suffix("_registry")
-			var fsm_cn: Variant = _gdc_const_identifier(fsm_id)
-			lines.append("const %s: StringName = &\"%s\"" % [fsm_cn, fsm_id])
-			for st: String in _get_fsm_state_keys(fsm_id):
-				var st_cn: Variant = _gdc_const_identifier(st)
-				if state_keys.has(st_cn) and String(state_keys[st_cn]) != st:
-					push_warning(
-						"GDFrameConstants: 状态常量名冲突 %s（%s 与 %s）"
-						% [st_cn, state_keys[st_cn], st]
-					)
-					continue
-				state_keys[st_cn] = st
-		var sorted_state_consts: Array = state_keys.keys()
-		sorted_state_consts.sort()
-		lines.append("")
-		lines.append(
-			"# --- FSM state keys（state_key，多台状态机可复用同一 [StringName]）---"
-		)
-		if sorted_state_consts.is_empty():
-			lines.append("# （尚无状态）")
-		else:
-			for cn: String in sorted_state_consts:
-				var st: String = String(state_keys[cn])
-				lines.append("const %s: StringName = &\"%s\"" % [cn, st])
 	var new_content: String = "\n".join(lines) + "\n"
 	if _read_res_text(out_path) == new_content:
 		return false

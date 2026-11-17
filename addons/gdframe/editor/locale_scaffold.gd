@@ -52,13 +52,9 @@ TIP_BTN_NO,否,否,No
 TIP_BTN_CANCEL,取消,取消,Cancel
 TIP_BTN_RETRY,重试,重試,Retry
 ERR_SAVE_WRITE_FAILED,无法保存：磁盘空间已满或没有写入权限。请处理后点击重试。,無法儲存：磁碟空間已滿或沒有寫入權限。請處理後點擊重試。,Could not save: disk full or no write permission. Free space or fix permissions then tap Retry.
-ERR_SAVE_SLOT_ID_INVALID,存档槽名称无效（仅允许字母、数字、下划线与连字符）。,存檔槽名稱無效（僅允許字母、數字、底線與連字號）。,Invalid save slot id (letters digits underscore hyphen only).
-ERR_SAVE_SLOT_NOT_FOUND,该存档槽不存在。,該存檔槽不存在。,Save slot not found.
-ERR_SAVE_READ_FAILED,无法读取存档文件，文件可能已损坏。,無法讀取存檔檔案，檔案可能已損壞。,Could not read save file. It may be corrupted.
 ERR_SAVE_PROFILE_READ_FAILED,玩家档案已损坏，已恢复为默认设置。,玩家檔案已損壞，已恢復為預設設定。,Player profile is corrupted. Default settings were restored.
 ERR_SAVE_DELETE_FAILED,无法删除存档文件。,無法刪除存檔檔案。,Could not delete save file.
 ERR_SAVE_CORRUPTED,存档已损坏。点击确定将删除该存档。,存檔已損壞。點擊確定將刪除該存檔。,Save data is corrupted. Tap OK to delete this save.
-ERR_SAVE_META_WRITE_FAILED,游戏进度已保存，但存档摘要更新失败。可尝试重新保存或从存档重建摘要。,遊戲進度已儲存，但存檔摘要更新失敗。可嘗試重新儲存或從存檔重建摘要。,Progress was saved but the save summary could not be updated. Try saving again or rebuild the summary from the save file.
 """
 
 

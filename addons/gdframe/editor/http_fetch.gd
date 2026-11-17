@@ -1,6 +1,5 @@
 @tool
 extends RefCounted
-class_name GDFrameHTTPFetch
 ## 编辑器 HTTP 下载。
 
 

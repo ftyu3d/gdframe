@@ -15,6 +15,7 @@ static func setup(host: Node, prof: GDFrameProfileResource) -> void:
 
 
 ## 升级 profile（settings 类型、总线键等）；不调用 [code]module.register[/code]。
+## 扩展通过 [code]module.gd[/code] 的 [code]ensure_profile[/code] 自行补齐存档键；
+## 未安装音频扩展时不会写入任何音频键。
 static func ensure_profile(prof: GDFrameProfileResource) -> void:
-	GDFrameAudioManager.ensure_profile_bus_keys(prof)
 	_PROFILE_EXT.ensure_all(prof, _EXT_RUNTIME.get_modules())

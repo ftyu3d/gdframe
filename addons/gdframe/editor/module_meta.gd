@@ -1,5 +1,4 @@
 extends RefCounted
-class_name GDFrameModuleMeta
 ## 读取 [code]addons/gdframe_*/editor/module.cfg[/code] 并汇总模块元数据（Dock 扩展管理页使用）。
 
 const MODULE_CFG_NAME: String = "module.cfg"

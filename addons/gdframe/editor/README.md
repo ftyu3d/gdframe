@@ -8,12 +8,10 @@
 - [2. 全局 API 总览](#2-全局-api-总览)
 - [3. 工程目录](#3-工程目录)
 - [4. 全局信号](#4-全局信号)
-- [5. 对象池 `pool`](#5-对象池-pool)
-- [6. UI 管理 `ui`](#6-ui-管理-ui)
-- [7. 输入 `input`](#7-输入-input)
-- [8. 状态机 `fsm`](#8-状态机-fsm)
-- [9. 存档、设置、音频与本地化](#9-存档设置音频与本地化)
-- [10. 编辑器 Dock](#10-编辑器-dock)
+- [5. UI 管理 `ui`](#5-ui-管理-ui)
+- [6. 输入 `input`](#6-输入-input)
+- [7. 存档、设置、音频与本地化](#7-存档设置音频与本地化)
+- [8. 编辑器 Dock](#8-编辑器-dock)
 
 ---
 
@@ -42,20 +40,19 @@ func _ready() -> void:
 | 服务 | 职责 |
 |------|------|
 | `signal_*` | 业务/框架信号（`GDFrame` 继承声明，直接用 `.connect` / `.emit`） |
-| `pool` | 对象池 |
 | `ui` | UI 预加载、打开/关闭 |
 | `input` | 输入设备跟踪 |
-| `fsm` | 状态机绑定与句柄（首次访问时加载） |
-| `save` | 用户目录档案与槽位 `Resource` |
+| `save` | 玩家档案（profile）读写 |
 | `settings` | 窗口、垂直同步、语言（持久化到档案） |
 | `audio` | 总线音量、BGM / SFX；流总线生成 `play_bgs` 等 |
 | `pause` | 游戏暂停栈（`get_tree().paused` + 音频暂停） |
+| `ext_*` | 扩展服务槽位（安装扩展后挂载） |
 
 在 Dock **扩展管理 → 生成扩展 API** 后，`GDFrame` 会挂上各扩展的强类型服务槽位（`GDFrame.example` 等，由 `ext_service_type()` 决定）；总览见 [GDFrame Ext](https://github.com/ftyu3d/gdframe-ext)（[Gitee](https://gitee.com/ftyu3d/gdframe-ext)），各模块 API 见 `addons/gdframe_<id>/editor/README.md`。
 
-**约定**：经 Autoload **`GDFrame`** 调用；类型注解用 **`GDFrameRoot`**；扩展能力用 **`GDFrame.<模块>.方法()`**（如 `GDFrame.example.ping()`）；模块注册用 **`ext_register`**（见 [§3](#3-工程目录)）；业务 signal 写在 `gdframe_signals.gd`；UI/FSM 标识用 **`GDFrameConstants`**；配置见 **`config/config.tres`**。无服务槽位的扩展可使用独立 `class_name` API（由各扩展 README 说明）。流总线轨方法在 **`GDFrame.audio`** 上。
+**约定**：经 Autoload **`GDFrame`** 调用；类型注解用 **`GDFrameRoot`**；扩展能力用 **`GDFrame.<模块>.方法()`**（如 `GDFrame.example.ping()`）；模块注册用 **`ext_register`**（见 [§3](#3-工程目录)）；业务 signal 写在 `gdframe_signals.gd`；UI 标识用 **`GDFrameConstants`**；配置见 **`config/config.tres`**。无服务槽位的扩展可使用独立 `class_name` API（由各扩展 README 说明）。流总线轨方法在 **`GDFrame.audio`** 上。
 
-**生命周期**：启用后初始化存档、设置、音频与 UI 登记；UI 在首次 `GDFrame.ui.preload_ui` 时加载；FSM 在首次访问 `GDFrame.fsm` 时加载。改 profile 字段后须 `GDFrame.save.flush()` 写盘；槽位由 `GDFrame.save.write_game_resource` 单独写盘。
+**生命周期**：启用后初始化存档、设置、音频与 UI 登记；UI 在首次 `GDFrame.ui.preload_ui` 时加载。改 profile 字段后须 `GDFrame.save.flush()` 写盘。对象池与状态机等扩展服务在安装对应扩展并 **生成扩展 API** 后于首次访问时加载（见下方「扩展服务槽位」）。
 
 ---
 
@@ -65,7 +62,7 @@ func _ready() -> void:
 
 | 路径 | 说明 |
 |------|------|
-| `generated/gdframe_constants.gd` | `GDFrameConstants`：`UI_*`、`FSM_*`、状态名 |
+| `generated/gdframe_constants.gd` | `GDFrameConstants`：`UI_*` |
 | `generated/gdframe_result.gd` | `GDFrameResult`：存档等 API 的错误码与 `is_ok` / `is_error` |
 | `generated/ext_slots.gd` | 已安装扩展挂到 `GDFrame` 上的强类型服务槽位（自动维护） |
 | `generated/audio_channels.gd` | `GDFrameAudioChannels`（`GDFrame.audio`）。流总线生成 `play_bgs` 等；未安装时为空壳 |
@@ -75,7 +72,6 @@ func _ready() -> void:
 | `dim.gd` / `dim.tscn` | 全屏遮罩场景与根脚本；缺失时重载插件自动生成 |
 | `ext.gd` | 项目扩展层（继承槽位；仅手写跨服务编排） |
 | `ui/` | UI 场景根目录（`ui_*.tscn`；对应 `GDFrameConfig.UI_ROOT_DIR`；首次创建 UI 时生成） |
-| `fsm/` | FSM 定义根目录（`fsm_*/…`；对应 `GDFrameConfig.FSM_ROOT`；首次创建状态机时生成） |
 
 可选扩展是独立插件，目录必须为 **`addons/gdframe_<id>/`**（含 `module.gd` 与 `plugin.cfg`）。更新核心 `addons/gdframe/` 不会覆盖它们。运行时扫描 `module.gd` 并 `register`；编辑器入口由各扩展自己的 `EditorPlugin` 提供。
 
@@ -111,12 +107,10 @@ static func dock_tab() -> Dictionary:
 
 未实现或返回空则不出现页签。
 
-**`GDFrameConstants`**：在 **启用插件**、Dock **UI管理 / 状态机** 增删改，或点 **刷新列表 / 刷新** 后自动更新。用法示例：
+**`GDFrameConstants`**：在 **启用插件**、Dock **UI管理** 增删改，或点 **刷新列表 / 刷新** 后自动更新。用法示例：
 
 ```gdscript
 GDFrame.ui.open(GDFrameConstants.UI_EXAMPLE)
-GDFrame.fsm.bind(GDFrameConstants.FSM_EXAMPLE, GDFrameConstants.IDLE, self)
-change_state(GDFrameConstants.RUN)  # GDFrameFSMState 子类内
 ```
 
 **`GDFrameConfig`**（`config/config.tres`；路径常量见 `config.gd`）
@@ -125,7 +119,7 @@ change_state(GDFrameConstants.RUN)  # GDFrameFSMState 子类内
 
 | 字段 | 默认 | 说明 |
 |------|------|------|
-| `ui_max_layer` | `2` | 见 [§6 图层与遮罩](#图层与遮罩) |
+| `ui_max_layer` | `2` | 见 [§5 图层与遮罩](#图层与遮罩) |
 
 **Input**
 
@@ -147,7 +141,7 @@ change_state(GDFrameConstants.RUN)  # GDFrameFSMState 子类内
 
 | 字段 | 默认 | 说明 |
 |------|------|------|
-| `save_file_format` | `TEXT` | `TEXT` → `.tres`（便于 diff）；`BINARY` → `.res`。Dock 切换格式会转换现有存档 |
+| （无） | — | 档案固定存于 `user://gdframe/profile.tres` |
 
 **Audio**
 
@@ -182,8 +176,6 @@ change_state(GDFrameConstants.RUN)  # GDFrameFSMState 子类内
 | `signal_gdframe_locale_changed(locale)` | 语言切换后广播 |
 | `signal_gdframe_profile_saved(error)` | `save.flush()` 完成；`GDFrameResult.is_ok(error)` 为成功 |
 | `signal_gdframe_profile_startup_fallback()` | 启动时 profile 无法解析，已回退默认档案 |
-| `signal_gdframe_game_save_written(slot_id, error)` | 槽位存档写入完成 |
-| `signal_gdframe_game_save_deleted(slot_id, error)` | 槽位存档删除完成 |
 | `signal_gdframe_bgm_changed(stream)` | BGM 逻辑曲目变更（`audio.stop_bgm` 后为 `null`） |
 | `signal_gdframe_pause_changed(is_paused, depth)` | 暂停栈激活状态或深度变化 |
 | `signal_gdframe_audio_paused(paused)` | `audio.set_paused` 时发出（`GDFrameExtStreamService` 入树连接） |
@@ -202,7 +194,7 @@ Dock → **通用** → **打开信号脚本** 可定位该文件。
 
 ### 存档操作结果（弹窗 / 多语言）
 
-`save.flush`、`save.write_game_resource`、`save.delete_game_resource` 返回 **`StringName`**：成功为 **`GDFrameResult.OK`**（空串 `&""`），失败为 **`GDFrameResult.ERR_SAVE_*`**，提示用 **`tr(String(err))`**。
+`save.flush`、`save.flush_async`、`save.delete_profile_from_disk` 返回 **`StringName`**：成功为 **`GDFrameResult.OK`**（空串 `&""`），失败为 **`GDFrameResult.ERR_SAVE_*`**，提示用 **`tr(String(err))`**。
 
 判断成功用 `GDFrameResult.is_ok(err)`，勿写 `err == GDFrameResult.OK`（空 `StringName` 在部分环境下不可靠）。
 
@@ -217,46 +209,16 @@ if GDFrameResult.is_error(err):
 |------|----------|
 | `GDFrameResult.OK` | 成功（空 `StringName`） |
 | `GDFrameResult.is_ok(err)` / `is_error(err)` | 判断是否成功/失败 |
-| `ERR_SAVE_WRITE_FAILED` | `save.flush` / `save.write_game_resource` 磁盘写入失败 |
-| `ERR_SAVE_SLOT_ID_INVALID` | 槽位 id 非法字符或为空 |
-| `ERR_SAVE_SLOT_NOT_FOUND` | 读/删不存在的槽位 |
-| `ERR_SAVE_READ_FAILED` | 槽位文件存在但 `ResourceLoader.load` 失败 |
-| `ERR_SAVE_PROFILE_READ_FAILED` | 启动时 profile 损坏已回退默认档案（`save.startup_profile_fallback()`）；`save.reload()` 失败时保留当前内存档案 |
-| `ERR_SAVE_CORRUPTED` | 主档损坏且无可用 sidecar（`save.startup_recovery_error`） |
-| `ERR_SAVE_DELETE_FAILED` | 删 profile / 槽位时磁盘删除失败 |
-| `ERR_SAVE_META_WRITE_FAILED` | `save.write_game_resource` 主档成功但 meta sidecar 写入失败；可 `save.rebuild_slot_meta_from_save` 修复 |
-| `read_resource(result)` / `read_error(result)` | 解析 `save.read_game_resource` 返回字典 |
+| `ERR_SAVE_WRITE_FAILED` | `save.flush` / `save.flush_async` 磁盘写入失败 |
+| `ERR_SAVE_PROFILE_READ_FAILED` | 启动时 profile 损坏已回退默认档案（`save.startup_profile_fallback()`） |
+| `ERR_SAVE_CORRUPTED` | profile 损坏且无可用备份（`save.startup_recovery_error`） |
+| `ERR_SAVE_DELETE_FAILED` | 删 profile 时磁盘删除失败 |
 
 请在项目本地化 CSV 中为上述 `ERR_SAVE_*` 配置译文。
 
 ---
 
-## 5. 对象池 `pool`
-
-| 方法 | 说明 |
-|------|------|
-| `pool.setup_scene(key, scene, warmup_count=0, max_idle, max_active) -> bool` | **PackedScene** 池；`warmup_count` 可选，默认 **0**（不预热）。**同 key 重注册时若仍有借出项则拒绝**（返回 `false`；池内 `push_error`） |
-| `pool.register_scene(key, scene) -> bool` | 只登记场景，不预热、不改限额；同 key 仍有借出项时拒绝 |
-| `pool.warmup(key, count)` | 预创建 `count` 个空闲实例；未注册 key 时 `push_error` 并忽略 |
-| `pool.set_limits(key, max_idle, max_active)` | `0` 表示不限制；**未注册 key** 时 `push_error` 并忽略 |
-| `pool.get_item(key, parent)` | 取出实例；`Node` 可挂到 `parent`。**未注册 key** 时 `push_error` 并返回 `null`；**`max_active` 满**时 `push_warning` 并返回 `null`。调用方须判空 |
-| `pool.recycle_item(key, item)` | 回收；继承 [code]GDFramePoolPooled[/code] 时调用 [code]on_pool_recycle[/code]。**未注册 key** 或 **错 key** 时 `push_error` 并忽略 |
-| `pool.clear(key, free_nodes)` | 清空空闲列表；`free_nodes=true` 时释放空闲实例。**仍有 `pool.get_item` 借出项时拒绝**（返回 `false` 并 `push_error`），须先 `pool.recycle_item` |
-| `pool.get_stats(key)` / `pool.get_all_stats()` | 统计字典；**未注册 key** 时 `push_error` 并返回 `{}` |
-
-```gdscript
-# 注册 + 预热；max_idle / max_active 为 0 时不限制
-GDFrame.pool.setup_scene(&"example_pool_key", EXAMPLE_SCENE, 10, 20, 50)
-var item: Node2D = GDFrame.pool.get_item(&"example_pool_key", self) as Node2D
-# … 使用完毕后
-GDFrame.pool.recycle_item(&"example_pool_key", item)
-```
-
-运行中可在 Dock **对象池** 页签点 **刷新** 查看统计。
-
----
-
-## 6. UI 管理 `ui`
+## 5. UI 管理 `ui`
 
 UI 放在 **`GDFrameConfig.UI_ROOT_DIR`**（含子目录），场景名 **`ui_*.tscn`**，根脚本 **`extends GDFrameUIBase`**（推荐 Dock 创建）。启动时自动扫描登记；首次 `ui.preload_ui` 时才 `load`（`ui.open` 须先预加载）。标识用 **`GDFrameConstants.UI_*`**。
 
@@ -341,7 +303,7 @@ UI 放在 **`GDFrameConfig.UI_ROOT_DIR`**（含子目录），场景名 **`ui_*.
 
 ---
 
-## 7. 输入 `input`
+## 6. 输入 `input`
 
 与 Godot [InputEvent](https://docs.godotengine.org/en/stable/tutorials/inputs/inputevent.html) 子类对齐；设备分类见 **`GDFrameInputEventDevice`**。
 
@@ -371,56 +333,16 @@ UI 放在 **`GDFrameConfig.UI_ROOT_DIR`**（含子目录），场景名 **`ui_*.
 
 ---
 
-## 8. 状态机 `fsm`
+## 7. 存档、设置、音频与本地化
 
-定义放在 **`GDFrameConfig.FSM_ROOT`** 下 `fsm_xxx/fsm_xxx_registry.gd`，状态脚本在同级 **`states/`**。状态脚本 **`extends GDFrameFSMState`**；用 **`change_state(GDFrameConstants.XXX)`** 切换。不用 FSM 的项目勿访问 `GDFrame.fsm`（子系统仅在首次访问时创建）。
-
-```gdscript
-GDFrame.fsm.preload_machine(GDFrameConstants.FSM_EXAMPLE)
-
-func _ready() -> void:
-	GDFrame.fsm.bind(GDFrameConstants.FSM_EXAMPLE, GDFrameConstants.IDLE, self)
-
-func _physics_process(delta: float) -> void:
-	GDFrame.fsm.physics_process(self, delta)
-```
-
-**性能**：框架不会全局 tick 状态机；仅在已 `fsm.bind` 的宿主里调用 `fsm.process` / `fsm.physics_process` / `fsm.dispatch_input`。`fsm.preload_all_machines()` 会加载 `FSM_ROOT` 下全部 Registry，状态机多时建议按需 `fsm.preload_machine(machine_id)`。
-
-| 方法 | 说明 |
-|------|------|
-| `fsm.preload_machine(machine_id)` | 预加载 Registry |
-| `fsm.preload_all_machines()` | 预加载全部 Registry（状态机多时慎用） |
-| `fsm.is_machine_loaded(machine_id)` | 是否已加载 Registry |
-| `fsm.bind(machine_id, initial_state, owner)` | 绑定到 `owner`；返回 `GDFrameFSMHandle`。**同一 owner + machine_id 重复 bind 返回已有句柄**（忽略新的 `initial_state`，会 `push_warning`） |
-| `fsm.process(owner, delta)` | 驱动状态的 `_process` |
-| `fsm.physics_process(owner, delta)` | 驱动状态的 `_physics_process`（推荐） |
-| `fsm.dispatch_input(owner, event)` | 将输入转发到当前状态 |
-| `fsm.handle_for(owner, machine_id)` | 取已有句柄；未 bind 为 `null` |
-
-`fsm.process` 与 `fsm.physics_process` 可单独或同时使用（与 Godot 节点一致）。**`fsm.dispatch_input` 须在宿主 `_input` / `_unhandled_input` 中手动调用**，框架不会自动转发输入。
-
-宿主节点离开场景树或调用 `GDFrameFSMHandle.release()` 时，框架会对当前状态调用 `_exit()` 并清理句柄缓存。
-
-**`machine_id` 与 Registry**
-
-- 约定目录：`fsm_<name>/fsm_<name>_registry.gd`，状态脚本在同级 `states/`。
-- `fsm.bind` / `GDFrameConstants.FSM_*` 使用的 id 以 Registry 中 **`machine_id()`** 为准（一般与目录名一致）。
-- 在 Dock 增删状态机后，已 bind 的宿主须重新 `fsm.bind`。
-
----
-
-## 9. 存档、设置、音频与本地化
-
-用户存档由 `GDFrame.save` 读写；磁盘路径用 `save.profile_disk_path()`、`save.get_slots_dir()` 等查询。
+框架自身只维护一份玩家档案，路径固定为 `user://gdframe/profile.tres`（`GDFrameSaveManager.USER_ROOT_URL` + `PROFILE_FILE`）。业务存档的格式、目录、数量全部由业务决定，框架不定义。
 
 档案 **`GDFrameProfileResource`** 含 **`settings`**（运行时统一为 **`GDFrameProfileSettingsData`**，见 `profile_settings_data.gd`；插件基类为 `GDFrameSettingsData`）。改设置/音量用 `GDFrame.settings` / `GDFrame.audio`，持久化用 `GDFrame.save.flush()`；直接改 `save.get_profile()` 只影响内存。
 
-### 存档格式与恢复
+### 档案恢复
 
-- **启动时**自动检查并恢复 profile、槽位与 meta；`save.startup_recovery_error()` 可取结果（损坏档常为 `ERR_SAVE_CORRUPTED`）。
-- 写入中断时框架会尝试从临时文件恢复；仍失败则返回 `ERR_SAVE_WRITE_FAILED`。主档损坏且无可用备份摘要时返回 `ERR_SAVE_CORRUPTED`（见下，玩家确认后删档）。
-- Dock 切换 `save_file_format` 会弹窗确认并将 `user://gdframe` 下现有存档转换为新格式。
+- **启动时**自动检查并恢复 profile；`save.startup_recovery_error()` 可取结果（损坏档常为 `ERR_SAVE_CORRUPTED`）。
+- 写入中断时框架会尝试从临时文件恢复；仍失败则返回 `ERR_SAVE_WRITE_FAILED`。profile 损坏且无可用备份时返回 `ERR_SAVE_CORRUPTED`（见下，玩家确认后删档）。
 
 ### 损坏存档（玩家确认后删除）
 
@@ -430,72 +352,65 @@ func _physics_process(delta: float) -> void:
 func _check_startup_saves() -> void:
 	var err: StringName = GDFrame.save.startup_recovery_error()
 	if err == GDFrameResult.ERR_SAVE_CORRUPTED:
-		if GDFrame.save.startup_corrupt_profile():
-			_show_corrupt_delete_dialog(
-				func () -> void: GDFrame.save.delete_profile_from_disk()
-			)
-		for slot_id: String in GDFrame.save.startup_corrupt_slots():
-			_show_corrupt_delete_dialog(
-				func () -> void: GDFrame.save.delete_game_resource(slot_id)
-			)
+		_show_corrupt_delete_dialog(
+			func () -> void: GDFrame.save.delete_profile_from_disk()
+		)
 		return
 	if not GDFrameResult.is_ok(err):
 		show_error_dialog(tr(String(err)))
 ```
 
-槽位损坏：`save.delete_game_resource`；profile 损坏：`save.delete_profile_from_disk()`。
+profile 损坏：`save.delete_profile_from_disk()`。
 
 ### 业务注意
 
-- 写档前若遇 sidecar 残留，框架会自动尝试 recover；仍失败则返回 `ERR_SAVE_WRITE_FAILED`，可先 `save.recover_game_slot` / `save.recover_all_pending_saves()` 再重试。
-- 写档过程中勿用 `save.has_game_slot` 刷新 UI。
-- 槽位 Resource 类型由业务保证读写一致。
+- 写档前若遇临时文件残留，框架会自动尝试 recover；仍失败则返回 `ERR_SAVE_WRITE_FAILED`，可先 `save.recover_all_pending_saves()` 再重试。
+- profile 由框架统一管理，业务只读 `save.get_profile()` 改字段并 `save.flush()`。
 
 ### 写入失败
 
-返回 `ERR_SAVE_WRITE_FAILED` 或 `ERR_SAVE_META_WRITE_FAILED`（主档已写、摘要失败），不自动重试；重试前先 `save.recover_game_slot` / `save.recover_all_pending_saves()`。meta 专项失败可 `save.rebuild_slot_meta_from_save`。
+返回 `ERR_SAVE_WRITE_FAILED`，不自动重试；重试前先 `save.recover_all_pending_saves()`。
+
+### 业务存档：原子写 `GDFrameSaveIO`
+
+框架**不定义**业务存档的格式、目录、槽位或数量。需要「写到一半断电也不毁档」时，把任意路径交给 `GDFrameSaveIO`：
+
+```gdscript
+const SAVE_PATH: String = "user://saves/world/w1.sav"
+
+# 启动时修一次（每条业务存档路径一次即可）
+GDFrameSaveIO.recover(SAVE_PATH)
+
+# 写：内部 .tmp → .bak → rename 提交；失败时旧档保持完好
+var err: StringName = GDFrameSaveIO.write_text(SAVE_PATH, "\n".join(lines))
+if GDFrameResult.is_error(err):
+	show_tip(tr(String(err)))
+
+# 二进制用同签名：GDFrameSaveIO.write_bytes(SAVE_PATH, bytes)
+```
+
+- 不假设内容是 `Resource`、JSON 还是自定义文本；不建目录以外的结构，不维护索引
+- 目录不存在会自动创建；不调用就没有任何开销
+- 写成功即返回 `GDFrameResult.OK`；返回错误时磁盘上仍是上一份完整内容
 
 ### 错误码说明
 
-存档相关 API 通过 **`GDFrameResult`** 返回结果，适合用 `tr(String(err))` 提示玩家。其它子系统（UI、池、FSM、音频等）误用时多在输出面板打印日志，并返回 `null` / `false`。
-
-### 槽位 meta（`GDFrameSlotMetaResource`）
-
-展示字段经 `save.write_slot_meta` 写入 `slots/meta/`。`save.write_game_resource` 在存档 Resource 含 `slot_label` / `play_time_sec` / `chapter` / `thumbnail_path` 时会**自动写入 meta sidecar**（与手动 `save.write_slot_meta` 等价）；meta 失败返回 `ERR_SAVE_META_WRITE_FAILED`（主档已落盘），由调用方 `save.rebuild_slot_meta_from_save` 修复。`save.slot_summary` **只读 meta**（不整档读盘）；无存 meta sidecar 时用 `save.rebuild_slot_meta_from_save`。`save.list_slot_ids` 仅有正式档的槽；固定槽位 UI 须遍历业务 id。写入 `slot_label`，summary 键为 `label`。
-
-**固定槽位**：遍历业务约定的槽位 id，用 `save.slot_summary` 的 `exists` / 展示字段。**动态列表**：`save.list_slot_ids()` + 各 id 的 `save.slot_summary`（列表不必 `save.read_game_resource` 整档）。
-
-框架**不**内置「当前槽位」；业务自维护 `current_slot_id`，选档后 `save.read_game_resource`，存档后建议 `save.write_slot_meta`。
+存档相关 API 通过 **`GDFrameResult`** 返回结果，适合用 `tr(String(err))` 提示玩家。其它子系统（UI、音频等）误用时多在输出面板打印日志，并返回 `null` / `false`。
 
 ### `save`
 
 | 方法 | 说明 |
 |------|------|
+| `save.setup()` | 初始化存档子系统（无参） |
 | `save.startup_recovery_error()` | 启动时恢复结果（含 `ERR_SAVE_CORRUPTED`） |
-| `save.startup_corrupt_profile()` | 启动损坏：profile 是否为坏档 |
-| `save.startup_corrupt_slots()` | 启动损坏：坏档槽位 id 列表 |
 | `save.startup_profile_fallback()` | 启动时 profile 存在但无法解析，已回退默认档案 |
 | `save.delete_profile_from_disk()` | 玩家确认后删除 profile 文件 |
-| `save.recover_all_pending_saves()` | 手动再次全量恢复 profile + 全部槽位 |
-| `save.recover_game_slot(slot_id)` | 仅恢复单槽 sidecar（写档重试前推荐） |
+| `save.recover_all_pending_saves()` | 手动再次全量恢复 profile |
 | `save.get_profile()` | 内存档案；改字段后请 `save.flush()` |
 | `save.flush()` | 写盘；返回操作结果；触发 `signal_gdframe_profile_saved` |
 | `save.flush_async()` | 协程写 profile（让出一帧后落盘）；可先显示等待 UI 再据返回值提示 |
-| `save.reload()` | 从盘重载 profile，重做扩展缺字段默认与总线键，并重新应用到设置与音频；成功时清除 `save.startup_profile_fallback()`；失败时保留当前内存档案并返回 `ERR_SAVE_PROFILE_READ_FAILED`（**不**改 `save.startup_profile_fallback()`） |
-| `save.profile_disk_path()` | profile 完整路径 |
-| `save.has_profile_on_disk()` | 磁盘上是否已有 profile 文件 |
-| `save.write_game_resource(slot_id, res)` | 槽位存档；含展示字段时自动写 meta sidecar。主档与 meta 均成功返回 `OK`；meta 失败返回 `ERR_SAVE_META_WRITE_FAILED`（主档已落盘，可 `save.rebuild_slot_meta_from_save` 修复） |
-| `save.read_game_resource(slot_id)` | 读取槽位；返回 `{ "resource", "error" }` |
-| `save.has_game_slot(slot_id)` | 是否存在 |
-| `save.delete_game_resource(slot_id)` | 删除槽位文件（含 `.tmp`/`.bak` 与同槽 meta）；返回操作结果；触发 `signal_gdframe_game_save_deleted` |
-| `save.list_slot_ids()` | 磁盘上已有槽位 id 列表（已排序） |
-| `save.slot_last_modified_unix(slot_id)` | 槽位存档最后修改时间（Unix 秒）；无存档为 `0` |
-| `save.slot_summary(slot_id)` | 选档摘要（**仅读 meta sidecar**）：`exists`、`slot_id`、`modified_unix`、`label`、`play_time_sec`、`chapter`、`thumbnail_path` |
-| `save.write_slot_meta(slot_id, meta)` | 写 `slots/meta/{id}.tres` / `.res` sidecar（`GDFrameSlotMetaResource`；原子写 + 启动/`save.recover_game_slot` 恢复） |
-| `save.rebuild_slot_meta_from_save(slot_id)` | 从槽位存档提取展示字段并写 meta sidecar |
-| `save.get_slots_dir()` | 槽位目录 |
-| `save.get_slot_meta_dir()` | 槽位 meta 目录 |
-| `save.file_extension()` | `".tres"` 或 `".res"` |
+
+业务存档（进度、世界数据等）不走 `save`，用 `GDFrameSaveIO` 原子写任意路径，见第 7 节。
 
 ### `settings`
 
@@ -603,16 +518,15 @@ GDFrame.audio.play_voice(line_stream)              # 默认 Voice 轨
 
 ---
 
-## 10. 编辑器 Dock
+## 8. 编辑器 Dock
 
 底部面板 **GDFrame**，侧栏页签：
 
 | 页签 | 功能 |
 |------|------|
-| **通用** | `ui_max_layer`、存档格式、`config.tres` 定位与同步、初始化本地化 CSV、外部编辑器下拉（VS Code / Cursor / CodeBuddy / TRAE，写入编辑器设置 `text_editor/external/exec_path`）打开仓库根或本工程、清空存档等 |
+| **通用** | `ui_max_layer`、`config.tres` 定位与同步、初始化本地化 CSV、外部编辑器下拉（VS Code / Cursor / CodeBuddy / TRAE，写入编辑器设置 `text_editor/external/exec_path`）打开仓库根或本工程、重置档案（删除 profile 文件）等 |
 | **UI管理** | 创建 `ui_*`、模糊搜索列表、编辑层 / 遮罩 / 是否参与导航、定位 / 打开 / 更名 / 删除（运行中禁止写操作） |
-| **状态机** | 在 `FSM_ROOT` 创建/管理状态机与状态（**运行中禁止**增删改） |
-| **对象池** | 运行中调试 `pool.get_stats`（F5 运行且调试器已连接时点 **刷新**） |
+| **设置项** | 隔行条纹列表：顶部一行「刷新 / 新建音轨 / 新建字段 / 生成音频」，每行「上移 / 下移 / 定位 / 删除」。内容为音轨（`gdframe_project/settings/*.cfg`，可增删与排序）与 `profile_settings_data.gd` 的 profile 字段（业务自定义段可删，自动生成段只读）；扩展 `settings_items()` / `profile_fields()` 声明的项标 `[模块]` 且只读 |
 | **扩展管理** | 安装/更新可选扩展、创建扩展模块、**生成扩展 API** |
 | **扩展页签** | 各扩展可选实现 [code]editor/module_editor.dock_tab()[/code]（返回 [code]{title, page}[/code]）时出现；挂在「扩展管理」与「更新」之间 |
 | **更新** | 检查 GDFrame 版本并安装；点 **更新** 前会确认（跨系列提示可能有兼容性变化）。成功后**自动重载插件**（运行中须先停止再手动点 **重载插件**）。已有 `config/config.tres` 会保留工程配置不覆盖；`config.gd` 仍随版本更新 |

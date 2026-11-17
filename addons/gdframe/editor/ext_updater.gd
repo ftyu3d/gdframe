@@ -1,6 +1,5 @@
 @tool
 extends RefCounted
-class_name GDFrameExtUpdater
 ## 扩展模块索引拉取与 ZIP 安装。
 
 const SOURCE_GITHUB: String = "github"

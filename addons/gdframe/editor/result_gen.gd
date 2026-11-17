@@ -6,16 +6,12 @@ const _MODULE_EDITOR_SCAN: Script = preload("res://addons/gdframe/editor/module_
 
 const _CORE_SECTIONS: Array[Dictionary] = [
 	{
-		"title": "Save（[method GDFrame.save.flush] / [method GDFrame.save.read_game_resource] 等）",
+		"title": "Save（[method GDFrame.save.flush] / [method GDFrame.save.flush_async] 等）",
 		"names": [
 			"ERR_SAVE_WRITE_FAILED",
-			"ERR_SAVE_SLOT_ID_INVALID",
-			"ERR_SAVE_SLOT_NOT_FOUND",
-			"ERR_SAVE_READ_FAILED",
 			"ERR_SAVE_PROFILE_READ_FAILED",
 			"ERR_SAVE_CORRUPTED",
 			"ERR_SAVE_DELETE_FAILED",
-			"ERR_SAVE_META_WRITE_FAILED",
 		],
 	},
 ]
@@ -161,15 +157,4 @@ static func _helpers_block() -> String:
 		+ "\n"
 		+ "static func is_error(err: StringName) -> bool:\n"
 		+ "\treturn not is_ok(err)\n"
-		+ "\n"
-		+ "\n"
-		+ "## [method GDFrame.save.read_game_resource] 返回字典中的 Resource；失败为 [code]null[/code]。\n"
-		+ "static func read_resource(result: Dictionary) -> Resource:\n"
-		+ "\tvar res: Variant = result.get(\"resource\")\n"
-		+ "\treturn res as Resource if res is Resource else null\n"
-		+ "\n"
-		+ "\n"
-		+ "static func read_error(result: Dictionary) -> StringName:\n"
-		+ "\tvar err: Variant = result.get(\"error\", OK)\n"
-		+ "\treturn err if err is StringName else OK\n"
 	)

@@ -1,5 +1,4 @@
 extends RefCounted
-class_name GDFrameModuleEditorScan
 ## 加载扩展 [code]editor/module_editor.gd[/code]（[code].gdignore[/code] 目录内；仅编辑器生成 API 用）。
 
 const MODULE_EDITOR_DIR: String = "editor"

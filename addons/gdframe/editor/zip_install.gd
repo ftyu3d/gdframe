@@ -1,5 +1,4 @@
 @tool
-class_name GDFrameZipInstall
 extends RefCounted
 
 ## 将 ZIP 解压到工程；[param map_entry] 把条目映射为 [code]res://[/code] 路径（空串跳过）。

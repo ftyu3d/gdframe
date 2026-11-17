@@ -15,8 +15,6 @@ signal signal_gdframe_locale_changed(locale: String)
 signal signal_gdframe_profile_saved(error: StringName)
 ## 启动时磁盘 profile 存在但无法解析，已回退默认档案（见 [method GDFrame.save.startup_profile_fallback]）。
 signal signal_gdframe_profile_startup_fallback()
-signal signal_gdframe_game_save_written(slot_id: String, error: StringName)
-signal signal_gdframe_game_save_deleted(slot_id: String, error: StringName)
 signal signal_gdframe_bgm_changed(stream: AudioStream)
 signal signal_gdframe_pause_changed(is_paused: bool, depth: int)
 signal signal_gdframe_audio_paused(paused: bool)

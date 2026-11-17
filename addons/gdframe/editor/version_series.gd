@@ -1,5 +1,4 @@
 extends RefCounted
-class_name GDFrameVersionSeries
 ## SemVer minor 系列解析、plugin_index / ext_index 拉取流水线与更新目标选择。
 
 const SERIES_PREFIX: String = "series."

@@ -1,5 +1,5 @@
 ## 全局配置资源（[code]addons/gdframe/config/config.tres[/code]）；启动时由 [code]GDFrame[/code] 加载。
-## 路径类常量在脚本内固定（[member UI_ROOT_DIR]、[member FSM_ROOT] 等），一般不改；可调项在检查器分组中编辑。
+## 路径类常量在脚本内固定（[member UI_ROOT_DIR]、[member EXT_ADDONS_DIR] 等），一般不改；可调项在检查器分组中编辑。
 extends Resource
 class_name GDFrameConfig
 
@@ -18,9 +18,9 @@ const SIGNALS_BASE_PATH: String = "res://addons/gdframe/runtime/gdframe_signals_
 
 ## 工程目录根（固定）；业务与生成脚本写于此，勿放入 [code]addons/gdframe/[/code]。
 const PROJECT_ROOT: String = "res://gdframe_project"
-## 插件自动生成的脚本目录（勿手改；扫描 UI/FSM、扩展槽位等写入此目录）。
+## 插件自动生成的脚本目录（勿手改；扫描 UI、扩展槽位等写入此目录）。
 const GENERATED_DIR: String = "res://gdframe_project/generated"
-## 自动生成的 UI/FSM 常量脚本（[code]class_name GDFrameConstants[/code]）。
+## 自动生成的 UI 常量脚本（[code]class_name GDFrameConstants[/code]）。
 const CONSTANTS_SCRIPT_PATH: String = "res://gdframe_project/generated/gdframe_constants.gd"
 ## 自动生成的 API 错误码脚本（[code]class_name GDFrameResult[/code]；核心 [code]ERR_SAVE_*[/code] + 扩展 [code]result_constants()[/code]）。
 const RESULT_SCRIPT_PATH: String = "res://gdframe_project/generated/gdframe_result.gd"
@@ -38,7 +38,9 @@ const EXT_ADDON_PREFIX: String = "gdframe_"
 const EXT_SCRIPT_PATH: String = "res://gdframe_project/ext.gd"
 ## 自动生成的扩展服务槽位（[code]GDFrame.example[/code] 等；Dock [b]扩展管理 → 生成扩展 API[/b] 写入）。
 const EXT_SLOTS_PATH: String = "res://gdframe_project/generated/ext_slots.gd"
-## 流总线生成的音频子类（[code]GDFrame.audio.play_bgs[/code] 等）。
+## 设置项定义目录（[code]gdframe_project/settings/*.cfg[/code]；音轨声明与扩展 [code]settings_items()[/code] 的落盘位置）。
+const SETTINGS_ITEMS_DIR: String = "res://gdframe_project/settings"
+## 生成的音频子类（[code]GDFrame.audio.play_bgs[/code] 等）。
 const AUDIO_CHANNELS_PATH: String = "res://gdframe_project/generated/audio_channels.gd"
 ## UI 场景根目录（[code]ui_*.tscn[/code]）；启动时自动扫描并登记路径（不预加载场景）。
 const UI_ROOT_DIR: String = "res://gdframe_project/ui"
@@ -46,8 +48,6 @@ const UI_ROOT_DIR: String = "res://gdframe_project/ui"
 const DIM_SCENE_PATH: String = "res://gdframe_project/dim.tscn"
 ## 全屏遮罩根脚本（与 [member DIM_SCENE_PATH] 配套）。
 const DIM_SCRIPT_PATH: String = "res://gdframe_project/dim.gd"
-## FSM 定义根目录（[code]fsm_*/fsm_*_registry.gd[/code]）；首次访问 [code]GDFrame.fsm[/code] 时建立索引。
-const FSM_ROOT: String = "res://gdframe_project/fsm"
 
 
 static func ext_normalize_module_id(raw_id: String) -> String:
@@ -72,18 +72,6 @@ static func ext_plugin_cfg_path(module_id: String) -> String:
 static func is_ext_addon_dir_name(dir_name: String) -> bool:
 	return dir_name.begins_with(EXT_ADDON_PREFIX) and dir_name.length() > EXT_ADDON_PREFIX.length()
 
-
-# =============================================================================
-# Save format
-# =============================================================================
-
-## 存档文件序列化格式。
-enum SaveFileFormat {
-	## 文本 [code].tres[/code]，便于版本管理 diff。
-	TEXT,
-	## 二进制 [code].res[/code]，体积更小。
-	BINARY,
-}
 
 ## 新建档案默认显示模式（写入档案字符串 [code]windowed[/code] / [code]maximized[/code] / [code]borderless[/code] / [code]exclusive[/code]）。
 enum DefaultDisplayMode {
@@ -130,25 +118,6 @@ enum DefaultDisplayMode {
 @export var common_window_heights: Array[int] = [360, 480, 720, 900, 1080, 1200, 1440, 1600, 2160]
 
 # =============================================================================
-# Inspector — Save
-# =============================================================================
-
-## 玩家档案（profile）与槽位文件的磁盘序列化格式。
-@export_group("Save")
-## [code]TEXT[/code] → [code].tres[/code]（便于 diff）；[code]BINARY[/code] → [code].res[/code]。Dock 切换格式会将 [code]user://gdframe[/code] 下现有存档转换为新扩展名。
-@export var save_file_format: SaveFileFormat = SaveFileFormat.TEXT
-
-# =============================================================================
-# Inspector — Pool
-# =============================================================================
-
-## 对象池运行时诊断日志（非错误类 push_error 不受影响）。
-@export_group("Pool")
-## [code]true[/code] 时 [code]max_active[/code] 已满仍 [method GDFrameNodePool.get_item] 会输出日志：编辑器 [code]push_warning[/code]，导出运行 [code]print[/code]。
-## 若用 [code]max_active[/code] 做限流且不想刷屏，可保持 [code]false[/code]。
-@export var pool_log_limits: bool = false
-
-# =============================================================================
 # Inspector — Audio
 # =============================================================================
 
@@ -175,6 +144,4 @@ enum DefaultDisplayMode {
 # API
 # =============================================================================
 
-## 当前 [member save_file_format] 对应的文件扩展名（含点号）。
-func get_save_extension() -> String:
-	return ".res" if save_file_format == SaveFileFormat.BINARY else ".tres"
+
