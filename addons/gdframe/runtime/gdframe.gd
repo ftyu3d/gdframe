@@ -149,13 +149,6 @@ func _on_debugger_capture(message: String, _data: Array) -> bool:
 	return false
 
 
-## 子 UI 关闭后，等 GUI 输入帧结束再确认父面板焦点。
-func _nav_focus_restore(restore_after_close: Dictionary) -> void:
-	await get_tree().process_frame
-	if ui != null:
-		ui.restore_nav_return_focus(restore_after_close)
-
-
 # =============================================================================
 # Internal
 # =============================================================================

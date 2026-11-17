@@ -265,7 +265,7 @@ func ui_nav_apply_focus(control: Control) -> void:
 		return
 	_ui_nav_ensure_focusable(control)
 	if not _ui_nav_grab_focus(control):
-		call_deferred(&"_ui_nav_deferred_grab_focus", control)
+		_ui_nav_deferred_grab_focus.call_deferred(control)
 
 
 func _ui_nav_ensure_focusable(control: Control) -> void:

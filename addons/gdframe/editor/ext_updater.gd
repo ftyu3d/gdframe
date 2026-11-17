@@ -7,12 +7,10 @@ const SOURCE_GITHUB: String = "github"
 const SOURCE_GITEE: String = "gitee"
 const GITHUB_REPO: String = "ftyu3d/gdframe-ext"
 const GITEE_REPO: String = "ftyu3d/gdframe-ext"
-const EDITOR_CFG_PATH: String = "user://gdframe_editor.cfg"
-const CFG_SECTION: String = "updater"
-const CFG_KEY_SOURCE: String = "update_source"
 const EXT_INDEX_CACHE_PATH: String = "res://addons/gdframe/editor/ext_index.cfg"
 const EXT_INDEX_NONEMPTY_KEY: String = "extensions_by_id"
 
+const _EDITOR_STATE: Script = preload("res://addons/gdframe/editor/editor_state.gd")
 const _VERSION_SERIES: Script = preload("res://addons/gdframe/editor/version_series.gd")
 const _EXT_MANAGE_LIST: Script = preload("res://addons/gdframe/editor/ext_manage_list.gd")
 const _ZIP_INSTALL: Script = preload("res://addons/gdframe/editor/zip_install.gd")
@@ -27,12 +25,7 @@ func get_last_http_status() -> int:
 
 
 func get_source() -> String:
-	var cfg: ConfigFile = ConfigFile.new()
-	if cfg.load(EDITOR_CFG_PATH) == OK:
-		var stored: String = str(cfg.get_value(CFG_SECTION, CFG_KEY_SOURCE, ""))
-		if stored == SOURCE_GITEE or stored == SOURCE_GITHUB:
-			return stored
-	return SOURCE_GITHUB
+	return _EDITOR_STATE.get_update_source()
 
 
 func cancel_fetch() -> void:
@@ -110,7 +103,7 @@ func apply_extension_update(owner: Node, download_url: String, ext_id: String) -
 	var ext_root: String = GDFrameConfig.ext_addon_path(trimmed_id)
 	return _ZIP_INSTALL.extract_zip_to_res(
 		zip_data,
-		"user://ext_update_%s.zip" % trimmed_id,
+		OS.get_temp_dir().path_join("ext_update_%s.zip" % trimmed_id),
 		func(entry_path: String) -> String:
 			return _ZIP_INSTALL.map_entry_under_prefix(
 				entry_path,

@@ -22,6 +22,8 @@ const FSM_STATE_SCRIPT_PATH: String = "res://addons/gdframe/runtime/fsm/fsm_stat
 const FSM_REGISTRY_SCRIPT_PATH: String = "res://addons/gdframe/runtime/fsm/fsm_registry_base.gd"
 
 const PoolDebuggerPlugin: Script = preload("res://addons/gdframe/editor/pool_debugger_plugin.gd")
+const EditorState: Script = preload("res://addons/gdframe/editor/editor_state.gd")
+const ExternalEditorIde: Script = preload("res://addons/gdframe/editor/external_editor_ide.gd")
 const UpdaterScript: Script = preload("res://addons/gdframe/editor/updater.gd")
 const ExtUpdaterScript: Script = preload("res://addons/gdframe/editor/ext_updater.gd")
 const ExtManageList: Script = preload("res://addons/gdframe/editor/ext_manage_list.gd")
@@ -82,8 +84,6 @@ var _pending_save_format_index: int = -1
 var _save_format_switch_busy: bool = false
 
 var _external_editor_project_launched: bool = false
-var _external_editor_exec_cache: String = ""
-var _external_editor_exec_cache_ready: bool = false
 var _external_editor_probe_cache: Dictionary[String, String] = {}
 var _external_editor_goto_retries_left: int = 0
 
@@ -248,7 +248,6 @@ func _exit_tree() -> void:
 	_config = null
 	_ext_updater = null
 	_external_editor_project_launched = false
-	_external_editor_exec_cache_ready = false
 	_external_editor_probe_cache.clear()
 	_external_editor_goto_retries_left = 0
 
@@ -822,10 +821,6 @@ func _on_ui_open_dim_scene() -> void:
 	_set_dock_status("ui", "状态: 已在场景编辑器中打开 %s" % path.get_file())
 
 
-func _call_editor_gen(gen: Script, method: StringName) -> Variant:
-	return gen.call(method)
-
-
 func _append_dock_status_line(status: String, line: String) -> String:
 	var msg: String = line.strip_edges()
 	if msg.is_empty():
@@ -836,10 +831,7 @@ func _append_dock_status_line(status: String, line: String) -> String:
 
 
 func _run_ext_slots_generate() -> Dictionary:
-	var raw: Variant = _call_editor_gen(ExtSlotsGen, &"generate_all")
-	if raw is Dictionary:
-		return raw
-	return {"ok": false, "changed": false, "message": "ext_slots_gen.gd 生成失败。", "content": ""}
+	return ExtSlotsGen.generate_all()
 
 
 func _apply_ext_slots_generate_result(result: Dictionary) -> void:
@@ -906,15 +898,7 @@ func _apply_ext_slots_generate_result(result: Dictionary) -> void:
 
 func _sync_audio_channels() -> Dictionary:
 	_ensure_generated_dir()
-	var raw: Variant = _call_editor_gen(AudioChannelsGen, &"generate_all")
-	if raw is Dictionary:
-		return raw
-	return {
-		"ok": false,
-		"changed": false,
-		"message": "audio_channels_gen.gd 生成失败。",
-		"content": "",
-	}
+	return AudioChannelsGen.generate_all()
 
 
 func _apply_audio_channels_generate_writes(result: Dictionary, sync_filesystem: bool = true) -> void:
@@ -934,25 +918,12 @@ func _sync_profile_settings_fields() -> Dictionary:
 
 
 func _call_profile_settings_generate() -> Dictionary:
-	var raw: Variant = _call_editor_gen(ProfileSettingsGen, &"generate_all")
-	if raw is Dictionary:
-		return raw
-	return {
-		"ok": false,
-		"changed_data": false,
-		"changed_defaults": false,
-		"message": "profile_settings_gen.gd 生成失败。",
-		"data_content": "",
-		"defaults_content": "",
-	}
+	return ProfileSettingsGen.generate_all()
 
 
 func _sync_result_constants() -> Dictionary:
 	_ensure_generated_dir()
-	var raw: Variant = _call_editor_gen(ResultGen, &"generate_all")
-	if raw is Dictionary:
-		return raw
-	return {"ok": false, "changed": false, "message": "result_gen.gd 生成失败。", "content": ""}
+	return ResultGen.generate_all()
 
 
 func _apply_generated_script_write(
@@ -985,10 +956,7 @@ func _apply_result_generate_writes(result: Dictionary, sync_filesystem: bool = t
 func _sync_signals_script(ensure_sync_fs: bool = true) -> Dictionary:
 	if not _res_file_exists(GDFrameConfig.SIGNALS_SCRIPT_PATH):
 		_ensure_signals_script(ensure_sync_fs)
-	var raw: Variant = _call_editor_gen(SignalsGen, &"generate_all")
-	if raw is Dictionary:
-		return raw
-	return {"ok": false, "changed": false, "message": "signals_gen.gd 生成失败。", "content": ""}
+	return SignalsGen.generate_all()
 
 
 func _apply_signals_generate_writes(result: Dictionary, sync_filesystem: bool = true) -> void:
@@ -1242,7 +1210,7 @@ func _build_general_page() -> Control:
 	var row_tools: HBoxContainer = HBoxContainer.new()
 	row_tools.add_theme_constant_override("separation", 6)
 	_external_editor_ide_opt = OptionButton.new()
-	for ide_id: String in _external_editor_ide_ids():
+	for ide_id: String in ExternalEditorIde.ids():
 		_external_editor_ide_opt.add_item(_external_editor_ide_label(ide_id))
 	_external_editor_ide_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_external_editor_ide_opt.size_flags_stretch_ratio = 0.5
@@ -1652,100 +1620,6 @@ const _EXTERNAL_EDITOR_USE: String = "text_editor/external/use_external_editor"
 const _EXTERNAL_EDITOR_PATH: String = "text_editor/external/exec_path"
 const _EXTERNAL_EDITOR_FLAGS: String = "text_editor/external/exec_flags"
 const _EXTERNAL_EDITOR_DEFAULT_FLAGS: String = "{project}"
-const _EXTERNAL_EDITOR_IDE_META_SECTION: String = "gdframe"
-const _EXTERNAL_EDITOR_IDE_META_KEY: String = "external_editor_ide"
-
-## 下拉可选的 IDE。win 项相对 LOCALAPPDATA / ProgramFiles / ProgramFiles(x86)；
-## mac 项相对 /Applications 与 ~/Applications；linux 项为绝对路径（~ 会替换为 HOME）。
-## prefixes / exes 用于扫描安装根目录下的变体目录（如 CodeBuddy CN、Trae CN）。
-## 均为 VS Code 系命令行：目录参数与 {project} / {file} --goto 通用。
-const _EXTERNAL_EDITOR_IDES: Array[Dictionary] = [
-	{
-		"id": "vscode",
-		"label": "VS Code",
-		"cli": ["code", "code.cmd", "code.exe"],
-		"prefixes": ["microsoft vs code", "visual studio code", "vscode"],
-		"exes": ["Code.exe"],
-		"win": ["Programs/Microsoft VS Code/Code.exe", "Microsoft VS Code/Code.exe"],
-		"mac": [
-			"Visual Studio Code.app/Contents/Resources/app/bin/code",
-			"Visual Studio Code.app/Contents/MacOS/Electron",
-			"Code.app/Contents/Resources/app/bin/code",
-			"Code.app/Contents/MacOS/Electron",
-		],
-		"linux": [
-			"~/.local/bin/code",
-			"/usr/bin/code",
-			"/usr/share/code/bin/code",
-			"/snap/bin/code",
-		],
-	},
-	{
-		"id": "cursor",
-		"label": "Cursor",
-		"cli": ["cursor", "cursor.cmd", "cursor.exe"],
-		"prefixes": ["cursor"],
-		"exes": ["Cursor.exe"],
-		"win": [
-			"Programs/cursor/Cursor.exe",
-			"Programs/Cursor/Cursor.exe",
-			"Cursor/Cursor.exe",
-		],
-		"mac": [
-			"Cursor.app/Contents/MacOS/Cursor",
-			"Cursor.app/Contents/Resources/app/bin/cursor",
-		],
-		"linux": ["~/.local/bin/cursor", "/usr/bin/cursor", "/usr/share/cursor/cursor"],
-	},
-	{
-		"id": "codebuddy",
-		"label": "CodeBuddy",
-		"cli": ["codebuddy"],
-		"prefixes": ["codebuddy"],
-		"exes": ["CodeBuddy.exe", "CodeBuddy CN.exe", "CodeBuddy IDE.exe"],
-		"win": [
-			"Programs/CodeBuddy/CodeBuddy.exe",
-			"Programs/CodeBuddy CN/CodeBuddy CN.exe",
-			"Programs/CodeBuddy IDE/CodeBuddy IDE.exe",
-			"CodeBuddy/CodeBuddy.exe",
-			"CodeBuddy CN/CodeBuddy CN.exe",
-			"CodeBuddy IDE/CodeBuddy IDE.exe",
-		],
-		"mac": [
-			"CodeBuddy.app/Contents/MacOS/CodeBuddy",
-			"CodeBuddy.app/Contents/Resources/app/bin/code",
-			"CodeBuddy IDE.app/Contents/MacOS/CodeBuddy IDE",
-			"CodeBuddy IDE.app/Contents/Resources/app/bin/code",
-		],
-		"linux": [
-			"~/.local/bin/codebuddy",
-			"/usr/bin/codebuddy",
-			"/usr/share/codebuddy/codebuddy",
-		],
-	},
-	{
-		"id": "trae",
-		"label": "TRAE",
-		"cli": ["trae"],
-		"prefixes": ["trae"],
-		"exes": ["Trae.exe", "Trae CN.exe"],
-		"win": [
-			"Programs/Trae/Trae.exe",
-			"Programs/Trae CN/Trae CN.exe",
-			"Programs/trae/Trae.exe",
-			"Trae/Trae.exe",
-			"Trae CN/Trae CN.exe",
-		],
-		"mac": [
-			"Trae.app/Contents/MacOS/Trae",
-			"Trae.app/Contents/Resources/app/bin/trae",
-			"Trae CN.app/Contents/MacOS/Trae CN",
-			"Trae CN.app/Contents/MacOS/Trae",
-			"Trae CN.app/Contents/Resources/app/bin/trae",
-		],
-		"linux": ["~/.local/bin/trae", "/usr/bin/trae", "/usr/share/trae/trae"],
-	},
-]
 
 
 func _external_editor_enabled() -> bool:
@@ -1759,19 +1633,9 @@ func _external_editor_exec_path_setting() -> String:
 
 
 func _external_editor_exec_path() -> String:
-	if _external_editor_exec_cache_ready:
-		return _external_editor_exec_cache
 	if not _external_editor_enabled():
-		_external_editor_exec_cache = ""
-	else:
-		_external_editor_exec_cache = _external_editor_exec_path_setting()
-	_external_editor_exec_cache_ready = true
-	return _external_editor_exec_cache
-
-
-func _invalidate_external_editor_exec_cache() -> void:
-	_external_editor_exec_cache_ready = false
-	_external_editor_exec_cache = ""
+		return ""
+	return _external_editor_exec_path_setting()
 
 
 func _is_external_editor_exec_valid(path: String) -> bool:
@@ -1781,71 +1645,36 @@ func _is_external_editor_exec_valid(path: String) -> bool:
 	return FileAccess.file_exists(trimmed)
 
 
-func _external_editor_ide_ids() -> PackedStringArray:
-	var ids: PackedStringArray = PackedStringArray()
-	for entry: Dictionary in _EXTERNAL_EDITOR_IDES:
-		var ide_id: String = str(entry.get("id", "")).strip_edges()
-		if not ide_id.is_empty():
-			ids.append(ide_id)
-	return ids
-
-
-func _external_editor_ide_entry(ide_id: String) -> Dictionary:
-	for entry: Dictionary in _EXTERNAL_EDITOR_IDES:
-		if str(entry.get("id", "")) == ide_id:
-			return entry
-	return {}
-
-
 func _external_editor_ide_label(ide_id: String) -> String:
-	var entry: Dictionary = _external_editor_ide_entry(ide_id)
-	var label: String = str(entry.get("label", "")).strip_edges()
-	return label if not label.is_empty() else "外部编辑器"
+	var ide: GDFrameExternalEditorIde = ExternalEditorIde.by_id(ide_id)
+	return ide.label if ide != null else "外部编辑器"
 
 
 func _external_editor_saved_ide_id() -> String:
-	var settings: EditorSettings = get_editor_interface().get_editor_settings()
-	var ide_id: String = str(
-		settings.get_project_metadata(
-			_EXTERNAL_EDITOR_IDE_META_SECTION,
-			_EXTERNAL_EDITOR_IDE_META_KEY,
-			"",
-		)
-	).strip_edges()
-	if _external_editor_ide_entry(ide_id).is_empty():
-		return ""
-	return ide_id
+	var ide_id: String = EditorState.get_external_editor_ide()
+	return ide_id if ExternalEditorIde.by_id(ide_id) != null else ""
 
 
 func _save_external_editor_ide_id(ide_id: String) -> void:
-	if _external_editor_ide_entry(ide_id).is_empty():
+	if ExternalEditorIde.by_id(ide_id) == null:
 		return
-	var settings: EditorSettings = get_editor_interface().get_editor_settings()
-	settings.set_project_metadata(
-		_EXTERNAL_EDITOR_IDE_META_SECTION,
-		_EXTERNAL_EDITOR_IDE_META_KEY,
-		ide_id,
-	)
+	EditorState.set_external_editor_ide(ide_id)
 
 
+## 由安装目录名或可执行文件名反推 IDE：前缀优先于命令行名，避免 CodeBuddy 的 bin/code 被认成 VS Code。
 func _guess_external_editor_ide_id(exec_path: String) -> String:
 	var lower: String = exec_path.strip_edges().replace("\\", "/").to_lower()
 	if lower.is_empty():
 		return ""
-	if lower.contains("codebuddy"):
-		return "codebuddy"
-	if lower.contains("trae"):
-		return "trae"
-	if lower.contains("cursor"):
-		return "cursor"
-	if (
-		lower.contains("visual studio code")
-		or lower.contains("microsoft vs code")
-		or lower.contains("code.exe")
-		or lower.contains("code.cmd")
-		or lower.ends_with("/code")
-	):
-		return "vscode"
+	for ide: GDFrameExternalEditorIde in ExternalEditorIde.all():
+		for prefix: String in ide.prefixes:
+			if lower.contains(prefix):
+				return ide.id
+	var file_name: String = lower.get_file()
+	for ide: GDFrameExternalEditorIde in ExternalEditorIde.all():
+		for cli_name: String in ide.cli:
+			if file_name == cli_name:
+				return ide.id
 	return ""
 
 
@@ -1857,7 +1686,7 @@ func _external_editor_selected_ide_id() -> String:
 	var guessed: String = _guess_external_editor_ide_id(_external_editor_exec_path_setting())
 	if not guessed.is_empty():
 		return guessed
-	var ids: PackedStringArray = _external_editor_ide_ids()
+	var ids: PackedStringArray = ExternalEditorIde.ids()
 	for ide_id: String in ids:
 		if not _resolve_external_editor_exec_for_ide(ide_id).is_empty():
 			return ide_id
@@ -1867,7 +1696,7 @@ func _external_editor_selected_ide_id() -> String:
 func _sync_external_editor_ide_option() -> void:
 	if _external_editor_ide_opt == null:
 		return
-	var ids: PackedStringArray = _external_editor_ide_ids()
+	var ids: PackedStringArray = ExternalEditorIde.ids()
 	if ids.is_empty():
 		return
 	var index: int = ids.find(_external_editor_selected_ide_id())
@@ -1878,7 +1707,7 @@ func _sync_external_editor_ide_option() -> void:
 
 func _on_external_editor_ide_selected(index: int) -> void:
 	_set_dock_status("general", "")
-	var ids: PackedStringArray = _external_editor_ide_ids()
+	var ids: PackedStringArray = ExternalEditorIde.ids()
 	if index < 0 or index >= ids.size():
 		return
 	var ide_id: String = ids[index]
@@ -1897,7 +1726,6 @@ func _on_external_editor_ide_selected(index: int) -> void:
 	var flags: String = str(settings.get_setting(_EXTERNAL_EDITOR_FLAGS)).strip_edges()
 	if flags.is_empty():
 		settings.set_setting(_EXTERNAL_EDITOR_FLAGS, _EXTERNAL_EDITOR_DEFAULT_FLAGS)
-	_invalidate_external_editor_exec_cache()
 	_set_dock_status("general", "外部编辑器：%s（%s）" % [label, resolved])
 
 
@@ -1956,7 +1784,6 @@ func _ensure_external_editor_ready_for_project() -> bool:
 	if saved_ide.is_empty() and not ide_to_save.is_empty():
 		_save_external_editor_ide_id(ide_to_save)
 
-	_invalidate_external_editor_exec_cache()
 	_sync_external_editor_ide_option()
 	if not notes.is_empty():
 		_set_dock_status("general", "%s。" % "；".join(notes))
@@ -1968,181 +1795,18 @@ func _resolve_external_editor_exec_for_ide(ide_id: String) -> String:
 		return ""
 	if _external_editor_probe_cache.has(ide_id):
 		return _external_editor_probe_cache[ide_id]
-	var resolved: String = ""
-	for candidate: String in _external_editor_candidate_paths(ide_id):
-		if _is_external_editor_exec_valid(candidate):
-			resolved = candidate
-			break
+	var ide: GDFrameExternalEditorIde = ExternalEditorIde.by_id(ide_id)
+	var resolved: String = ide.first_existing() if ide != null else ""
 	_external_editor_probe_cache[ide_id] = resolved
 	return resolved
 
 
 func _detect_external_editor_exec_path() -> String:
-	var candidates: PackedStringArray = _external_editor_candidate_paths()
-	for candidate: String in candidates:
-		if _is_external_editor_exec_valid(candidate):
-			return candidate
+	for ide_id: String in ExternalEditorIde.ids():
+		var exec_path: String = _resolve_external_editor_exec_for_ide(ide_id)
+		if not exec_path.is_empty():
+			return exec_path
 	return ""
-
-
-func _external_editor_candidate_paths(ide_id: String = "") -> PackedStringArray:
-	var out: PackedStringArray = PackedStringArray()
-	var os_name: String = OS.get_name()
-	for entry: Dictionary in _EXTERNAL_EDITOR_IDES:
-		var entry_id: String = str(entry.get("id", ""))
-		if not ide_id.is_empty() and entry_id != ide_id:
-			continue
-		for candidate: String in _external_editor_ide_os_paths(entry, os_name):
-			if not candidate.is_empty() and not out.has(candidate):
-				out.append(candidate)
-	return out
-
-
-func _external_editor_ide_os_paths(entry: Dictionary, os_name: String) -> PackedStringArray:
-	var out: PackedStringArray = PackedStringArray()
-	var cli_names: PackedStringArray = _variant_to_string_array(entry.get("cli", []))
-	match os_name:
-		"Windows":
-			var roots: PackedStringArray = PackedStringArray([
-				OS.get_environment("LOCALAPPDATA"),
-				OS.get_environment("ProgramFiles"),
-				OS.get_environment("ProgramFiles(x86)"),
-			])
-			for install_root: String in roots:
-				var base: String = install_root.replace("\\", "/").rstrip("/")
-				if base.is_empty():
-					continue
-				for win_rel: String in _variant_to_string_array(entry.get("win", [])):
-					out.append("%s/%s" % [base, win_rel])
-		"macOS":
-			var home: String = OS.get_environment("HOME").replace("\\", "/").rstrip("/")
-			var app_roots: PackedStringArray = PackedStringArray(["/Applications"])
-			if not home.is_empty():
-				app_roots.append("%s/Applications" % home)
-			for app_root: String in app_roots:
-				for mac_rel: String in _variant_to_string_array(entry.get("mac", [])):
-					out.append("%s/%s" % [app_root, mac_rel])
-		_:
-			var home_unix: String = OS.get_environment("HOME").replace("\\", "/").rstrip("/")
-			for linux_path: String in _variant_to_string_array(entry.get("linux", [])):
-				if linux_path.begins_with("~"):
-					if home_unix.is_empty():
-						continue
-					out.append("%s/%s" % [home_unix, linux_path.trim_prefix("~/")])
-				else:
-					out.append(linux_path)
-	# 扫描到的真实安装目录优先于 PATH 里的启动脚本（.cmd 无法被 create_process 直接执行）。
-	out.append_array(_scan_external_editor_installs(entry, os_name))
-	out.append_array(_which_command_paths(cli_names))
-	return out
-
-
-## 扫描安装根目录下与 IDE 名称前缀匹配的目录，适配不同发行版目录名（如 CodeBuddy CN、Trae CN）。
-func _scan_external_editor_installs(entry: Dictionary, os_name: String) -> PackedStringArray:
-	var out: PackedStringArray = PackedStringArray()
-	var prefixes: PackedStringArray = _variant_to_string_array(entry.get("prefixes", []))
-	if prefixes.is_empty():
-		return out
-	var exe_names: PackedStringArray = _variant_to_string_array(entry.get("exes", []))
-	var cli_names: PackedStringArray = _variant_to_string_array(entry.get("cli", []))
-	match os_name:
-		"Windows":
-			for root: String in _external_editor_windows_scan_roots():
-				for dir_name: String in DirAccess.get_directories_at(root):
-					if not _external_editor_name_matches(dir_name, prefixes):
-						continue
-					for exe_name: String in exe_names:
-						out.append("%s/%s/%s" % [root, dir_name, exe_name])
-		"macOS":
-			for root: String in _external_editor_mac_scan_roots():
-				for dir_name: String in DirAccess.get_directories_at(root):
-					if not dir_name.ends_with(".app"):
-						continue
-					var stem: String = dir_name.trim_suffix(".app")
-					if not _external_editor_name_matches(stem, prefixes):
-						continue
-					var app_path: String = "%s/%s" % [root, dir_name]
-					out.append("%s/Contents/MacOS/%s" % [app_path, stem])
-					for exe_name: String in exe_names:
-						out.append("%s/Contents/MacOS/%s" % [app_path, exe_name.get_basename()])
-					for cli_name: String in cli_names:
-						out.append("%s/Contents/Resources/app/bin/%s" % [app_path, cli_name])
-		_:
-			for root: String in ["/opt", "/usr/share"]:
-				for dir_name: String in DirAccess.get_directories_at(root):
-					if not _external_editor_name_matches(dir_name, prefixes):
-						continue
-					out.append("%s/%s/%s" % [root, dir_name, dir_name])
-					for cli_name: String in cli_names:
-						out.append("%s/%s/%s" % [root, dir_name, cli_name])
-	return out
-
-
-func _external_editor_name_matches(name: String, prefixes: PackedStringArray) -> bool:
-	var lower: String = name.strip_edges().to_lower()
-	if lower.is_empty():
-		return false
-	for prefix: String in prefixes:
-		if lower.begins_with(prefix):
-			return true
-	return false
-
-
-func _external_editor_windows_scan_roots() -> PackedStringArray:
-	var roots: PackedStringArray = PackedStringArray()
-	var local_app: String = OS.get_environment("LOCALAPPDATA").replace("\\", "/").rstrip("/")
-	if not local_app.is_empty():
-		roots.append("%s/Programs" % local_app)
-		roots.append(local_app)
-	for env_name: String in ["ProgramFiles", "ProgramFiles(x86)"]:
-		var base: String = OS.get_environment(env_name).replace("\\", "/").rstrip("/")
-		if not base.is_empty() and not roots.has(base):
-			roots.append(base)
-	var existing: PackedStringArray = PackedStringArray()
-	for root: String in roots:
-		if DirAccess.dir_exists_absolute(root) and not existing.has(root):
-			existing.append(root)
-	return existing
-
-
-func _external_editor_mac_scan_roots() -> PackedStringArray:
-	var roots: PackedStringArray = PackedStringArray(["/Applications"])
-	var home: String = OS.get_environment("HOME").replace("\\", "/").rstrip("/")
-	if not home.is_empty():
-		var user_apps: String = "%s/Applications" % home
-		if DirAccess.dir_exists_absolute(user_apps):
-			roots.append(user_apps)
-	return roots
-
-
-func _variant_to_string_array(value: Variant) -> PackedStringArray:
-	var out: PackedStringArray = PackedStringArray()
-	if not (value is Array):
-		return out
-	var items: Array = value as Array
-	for item: Variant in items:
-		var text: String = str(item).strip_edges()
-		if not text.is_empty():
-			out.append(text)
-	return out
-
-
-func _which_command_paths(names: PackedStringArray) -> PackedStringArray:
-	var found: PackedStringArray = PackedStringArray()
-	var finder: String = "where" if OS.get_name() == "Windows" else "which"
-	for name: String in names:
-		var output: Array = []
-		var exit_code: int = OS.execute(finder, [name], output, true, false)
-		if exit_code != 0 or output.is_empty():
-			continue
-		for line_variant: Variant in output:
-			for raw_line: String in str(line_variant).split("\n"):
-				var line: String = raw_line.strip_edges().replace("\\", "/")
-				if line.is_empty():
-					continue
-				if _is_external_editor_exec_valid(line) and not found.has(line):
-					found.append(line)
-	return found
 
 
 func _expand_external_editor_placeholders(
@@ -2248,15 +1912,15 @@ func _launch_external_editor_folder(folder_global: String) -> bool:
 	if not _external_editor_enabled():
 		_set_dock_status("general", "未启用外部文本编辑器，请在编辑器设置中开启。")
 		return false
-	var exec_path: Variant = _external_editor_exec_path()
-	if exec_path.is_empty() or not _is_external_editor_exec_valid(str(exec_path)):
+	var exec_path: String = _external_editor_exec_path()
+	if not _is_external_editor_exec_valid(exec_path):
 		_set_dock_status("general", "外部编辑器可执行文件路径无效。")
 		return false
 	var folder: String = folder_global.strip_edges()
 	if folder.is_empty() or not DirAccess.dir_exists_absolute(folder):
 		_set_dock_status("general", "工作区目录无效: %s" % folder_global)
 		return false
-	var args: Variant = _build_external_editor_args_folder_only(folder)
+	var args: PackedStringArray = _build_external_editor_args_folder_only(folder)
 	var pid: int = OS.create_process(exec_path, args)
 	if pid < 0:
 		_set_dock_status("general", "启动失败，请检查可执行路径与启动参数。")
@@ -2269,10 +1933,10 @@ func _open_script_in_external_editor(
 ) -> bool:
 	if not FileAccess.file_exists(script_path):
 		return false
-	var exec_path: Variant = _external_editor_exec_path()
+	var exec_path: String = _external_editor_exec_path()
 	if exec_path.is_empty():
 		return false
-	var args: Variant = _build_external_editor_args_for_script(script_path, line, col, goto_only)
+	var args: PackedStringArray = _build_external_editor_args_for_script(script_path, line, col, goto_only)
 	var pid: int = OS.create_process(exec_path, args)
 	if pid < 0:
 		push_warning(
@@ -5172,10 +4836,7 @@ func _ensure_generated_dir() -> void:
 	)
 
 func _signals_script_template() -> String:
-	var raw: Variant = _call_editor_gen(SignalsGen, &"skeleton_template")
-	if raw is String:
-		return raw
-	return ""
+	return SignalsGen.skeleton_template()
 
 func _ensure_signals_script(sync_filesystem: bool = true) -> void:
 	if _res_file_exists(GDFrameConfig.SIGNALS_SCRIPT_PATH):
@@ -5188,10 +4849,7 @@ func _ensure_signals_script(sync_filesystem: bool = true) -> void:
 		_update_editor_filesystem(GDFrameConfig.SIGNALS_SCRIPT_PATH)
 
 func _profile_settings_script_template() -> String:
-	var raw: Variant = _call_editor_gen(ProfileSettingsGen, &"skeleton_template")
-	if raw is String:
-		return raw
-	return ""
+	return ProfileSettingsGen.skeleton_template()
 
 func _ensure_profile_settings_script(sync_filesystem: bool = true) -> void:
 	if _res_file_exists(GDFrameConfig.PROFILE_SETTINGS_SCRIPT_PATH):

@@ -8,9 +8,6 @@ extends RefCounted
 
 const SOURCE_GITHUB: String = "github"
 const SOURCE_GITEE: String = "gitee"
-const EDITOR_CFG_PATH: String = "user://gdframe_editor.cfg"
-const CFG_SECTION: String = "updater"
-const CFG_KEY_SOURCE: String = "update_source"
 
 const GITHUB_REPO: String = "ftyu3d/gdframe"
 const GITEE_REPO: String = "ftyu3d/gdframe"
@@ -31,6 +28,7 @@ const KEEP_EXISTING_REL_PATHS: Array[String] = [
 	"config/config.tres.uid",
 ]
 
+const _EDITOR_STATE: Script = preload("res://addons/gdframe/editor/editor_state.gd")
 const _VERSION_SERIES: Script = preload("res://addons/gdframe/editor/version_series.gd")
 const _ZIP_INSTALL: Script = preload("res://addons/gdframe/editor/zip_install.gd")
 const _HTTP_FETCH: Script = preload("res://addons/gdframe/editor/http_fetch.gd")
@@ -43,21 +41,11 @@ var _plugin_index_session_cache: Dictionary = {}
 # =============================================================================
 
 func get_source() -> String:
-	var cfg: ConfigFile = ConfigFile.new()
-	if cfg.load(EDITOR_CFG_PATH) == OK:
-		var stored: String = str(cfg.get_value(CFG_SECTION, CFG_KEY_SOURCE, ""))
-		if stored == SOURCE_GITEE or stored == SOURCE_GITHUB:
-			return stored
-	return SOURCE_GITHUB
+	return _EDITOR_STATE.get_update_source()
 
 
 func set_source(source: String) -> void:
-	if source != SOURCE_GITEE:
-		source = SOURCE_GITHUB
-	var cfg: ConfigFile = ConfigFile.new()
-	cfg.load(EDITOR_CFG_PATH)
-	cfg.set_value(CFG_SECTION, CFG_KEY_SOURCE, source)
-	cfg.save(EDITOR_CFG_PATH)
+	_EDITOR_STATE.set_update_source(source)
 
 
 func get_last_http_status() -> int:
@@ -112,7 +100,7 @@ func apply_update(owner: Node, download_url: String) -> bool:
 	var zip_data: PackedByteArray = await _http_get_bytes(owner, download_url)
 	return _ZIP_INSTALL.extract_zip_to_res(
 		zip_data,
-		"user://gdframe_update.zip",
+		OS.get_temp_dir().path_join("gdframe_update.zip"),
 		_to_target_path,
 		MIRROR_SYNC_ROOT,
 		PRESERVE_REL_PATHS,

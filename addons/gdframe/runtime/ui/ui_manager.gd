@@ -15,7 +15,6 @@ const PREPARING_META: StringName = &"gdframe_ui_preparing"
 # =============================================================================
 
 var _root: CanvasLayer = null
-var _frame: Node = null
 var _layer_roots: Array[Control] = []
 var _dim: Control = null
 var _layer_count: int = 0
@@ -42,7 +41,6 @@ var _nav_vp: Viewport = null
 func setup(root_node: Node, layer_slot_count: int) -> void:
 	if _root != null:
 		return
-	_frame = root_node
 	_root = CanvasLayer.new()
 	_root.name = "GDFrameUIRoot"
 	_root.layer = ROOT_CANVAS_LAYER
@@ -87,7 +85,7 @@ func preload_ui(ui_id: StringName) -> void:
 	while ui.has_meta(PREPARING_META):
 		if not is_instance_valid(ui):
 			return
-		await _frame.get_tree().process_frame
+		await _root.get_tree().process_frame
 	ui.set_meta(PREPARING_META, true)
 	await ui._on_init()
 	if not is_instance_valid(ui):
@@ -136,7 +134,7 @@ func open(ui_id: StringName, data: Variant = null, layer: int = -1) -> Control:
 		_nav_ensure_parent_locked(ui_id, nav_parent)
 		_nav_release_gui_focus_from_locked(ui_id)
 	if ui.ui_nav_can_receive_focus() and ui.ui_nav_auto_focus_on_show():
-		ui.call_deferred(&"ui_nav_focus_on_show", data)
+		ui.ui_nav_focus_on_show.call_deferred(data)
 	return ui
 
 
@@ -180,8 +178,7 @@ func close(ui_id: StringName, cache: bool = true, reopen_replaced: bool = true) 
 	_nav_prune_closed_ui_from_locks(ui_id)
 	_nav_unlock_for_close(ui_id)
 	_nav_clear_stale_suspend_on_stack()
-	if _frame != null:
-		_frame.call_deferred(&"_nav_focus_restore", nav_restore)
+	_nav_restore_after_frame.call_deferred(nav_restore)
 	if reopen_replaced and _nav_reopen_on_close.has(ui_id):
 		var reopen_id: StringName = _nav_reopen_on_close[ui_id] as StringName
 		_nav_reopen_on_close.erase(ui_id)
@@ -192,6 +189,11 @@ func close(ui_id: StringName, cache: bool = true, reopen_replaced: bool = true) 
 	_cache.erase(ui_id)
 	ui.queue_free()
 	return true
+
+## 子 UI 关闭后，等 GUI 输入帧结束再确认父面板焦点。
+func _nav_restore_after_frame(restore_after_close: Dictionary) -> void:
+	await _root.get_tree().process_frame
+	restore_nav_return_focus(restore_after_close)
 
 func close_top() -> bool:
 	_prune_stale_stack_top()
