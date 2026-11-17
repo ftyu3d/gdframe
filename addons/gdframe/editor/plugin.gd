@@ -74,6 +74,7 @@ var _toggle_general: Button
 var _label_general_status: Label
 var _ui_max_layer_spin: SpinBox
 var _save_fmt_opt: OptionButton
+var _external_editor_ide_opt: OptionButton
 var _delete_all_saves_dialog: ConfirmationDialog
 var _save_format_change_dialog: ConfirmationDialog
 var _external_editor_setup_dialog: AcceptDialog
@@ -83,6 +84,7 @@ var _save_format_switch_busy: bool = false
 var _external_editor_project_launched: bool = false
 var _external_editor_exec_cache: String = ""
 var _external_editor_exec_cache_ready: bool = false
+var _external_editor_probe_cache: Dictionary[String, String] = {}
 var _external_editor_goto_retries_left: int = 0
 
 # =============================================================================
@@ -247,6 +249,7 @@ func _exit_tree() -> void:
 	_ext_updater = null
 	_external_editor_project_launched = false
 	_external_editor_exec_cache_ready = false
+	_external_editor_probe_cache.clear()
 	_external_editor_goto_retries_left = 0
 
 
@@ -501,8 +504,9 @@ func _build_dock() -> void:
 	_configure_plugin_modal_dialog(_external_editor_setup_dialog)
 	_external_editor_setup_dialog.title = "需要配置外部编辑器"
 	_external_editor_setup_dialog.dialog_text = (
-		"未能自动找到 Cursor / VS Code 可执行文件。\n\n"
-		+ "请打开：编辑器 → 编辑器设置 → 文本编辑器 → 外部\n"
+		"未能找到所选 IDE 的可执行文件。\n\n"
+		+ "请在 GDFrame 面板「通用」页签换一个 IDE，或打开：\n"
+		+ "编辑器 → 编辑器设置 → 文本编辑器 → 外部\n"
 		+ "填写「执行路径」，勾选「使用外部编辑器」，然后重试。"
 	)
 	_external_editor_setup_dialog.ok_button_text = "知道了"
@@ -1237,6 +1241,18 @@ func _build_general_page() -> Control:
 
 	var row_tools: HBoxContainer = HBoxContainer.new()
 	row_tools.add_theme_constant_override("separation", 6)
+	_external_editor_ide_opt = OptionButton.new()
+	for ide_id: String in _external_editor_ide_ids():
+		_external_editor_ide_opt.add_item(_external_editor_ide_label(ide_id))
+	_external_editor_ide_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_external_editor_ide_opt.size_flags_stretch_ratio = 0.5
+	_external_editor_ide_opt.tooltip_text = (
+		"「从外部编辑器打开…」使用的 IDE。选择后自动填入编辑器设置 "
+		+ "text_editor/external/exec_path 并启用外部编辑器。"
+	)
+	_external_editor_ide_opt.item_selected.connect(_on_external_editor_ide_selected)
+	row_tools.add_child(_external_editor_ide_opt)
+	_sync_external_editor_ide_option()
 	row_tools.add_child(_general_tool_button(
 		"从外部编辑器打开仓库根目录",
 		"打开 Git 仓库根目录。",
@@ -1419,12 +1435,12 @@ func _on_general_locate_signals_script() -> void:
 		return
 	if _external_editor_enabled():
 		if not _external_editor_project_launched:
-			# 冷启动：优先一次传入「工程目录 + goto」，与 VS Code/Cursor 推荐用法一致。
+			# 冷启动：优先一次传入「工程目录 + goto」，符合 VS Code 系命令行用法。
 			if _open_script_in_external_editor(GDFrameConfig.SIGNALS_SCRIPT_PATH, 1, 1, false):
 				_external_editor_project_launched = true
 				_set_dock_status("general","已在外部编辑器打开 %s" % GDFrameConfig.SIGNALS_SCRIPT_PATH.get_file())
 				return
-			# 回退：先只开工作区，待 Cursor 就绪后多次用「工作区 + goto」重试（仅 --goto 冷启动易丢）。
+			# 回退：先只开工作区，待 IDE 就绪后多次用「工作区 + goto」重试（仅 --goto 冷启动易丢）。
 			if not _launch_external_editor_folder(_external_editor_workspace_global_path()):
 				return
 			_begin_external_editor_open_signals_retry()
@@ -1636,6 +1652,100 @@ const _EXTERNAL_EDITOR_USE: String = "text_editor/external/use_external_editor"
 const _EXTERNAL_EDITOR_PATH: String = "text_editor/external/exec_path"
 const _EXTERNAL_EDITOR_FLAGS: String = "text_editor/external/exec_flags"
 const _EXTERNAL_EDITOR_DEFAULT_FLAGS: String = "{project}"
+const _EXTERNAL_EDITOR_IDE_META_SECTION: String = "gdframe"
+const _EXTERNAL_EDITOR_IDE_META_KEY: String = "external_editor_ide"
+
+## 下拉可选的 IDE。win 项相对 LOCALAPPDATA / ProgramFiles / ProgramFiles(x86)；
+## mac 项相对 /Applications 与 ~/Applications；linux 项为绝对路径（~ 会替换为 HOME）。
+## prefixes / exes 用于扫描安装根目录下的变体目录（如 CodeBuddy CN、Trae CN）。
+## 均为 VS Code 系命令行：目录参数与 {project} / {file} --goto 通用。
+const _EXTERNAL_EDITOR_IDES: Array[Dictionary] = [
+	{
+		"id": "vscode",
+		"label": "VS Code",
+		"cli": ["code", "code.cmd", "code.exe"],
+		"prefixes": ["microsoft vs code", "visual studio code", "vscode"],
+		"exes": ["Code.exe"],
+		"win": ["Programs/Microsoft VS Code/Code.exe", "Microsoft VS Code/Code.exe"],
+		"mac": [
+			"Visual Studio Code.app/Contents/Resources/app/bin/code",
+			"Visual Studio Code.app/Contents/MacOS/Electron",
+			"Code.app/Contents/Resources/app/bin/code",
+			"Code.app/Contents/MacOS/Electron",
+		],
+		"linux": [
+			"~/.local/bin/code",
+			"/usr/bin/code",
+			"/usr/share/code/bin/code",
+			"/snap/bin/code",
+		],
+	},
+	{
+		"id": "cursor",
+		"label": "Cursor",
+		"cli": ["cursor", "cursor.cmd", "cursor.exe"],
+		"prefixes": ["cursor"],
+		"exes": ["Cursor.exe"],
+		"win": [
+			"Programs/cursor/Cursor.exe",
+			"Programs/Cursor/Cursor.exe",
+			"Cursor/Cursor.exe",
+		],
+		"mac": [
+			"Cursor.app/Contents/MacOS/Cursor",
+			"Cursor.app/Contents/Resources/app/bin/cursor",
+		],
+		"linux": ["~/.local/bin/cursor", "/usr/bin/cursor", "/usr/share/cursor/cursor"],
+	},
+	{
+		"id": "codebuddy",
+		"label": "CodeBuddy",
+		"cli": ["codebuddy"],
+		"prefixes": ["codebuddy"],
+		"exes": ["CodeBuddy.exe", "CodeBuddy CN.exe", "CodeBuddy IDE.exe"],
+		"win": [
+			"Programs/CodeBuddy/CodeBuddy.exe",
+			"Programs/CodeBuddy CN/CodeBuddy CN.exe",
+			"Programs/CodeBuddy IDE/CodeBuddy IDE.exe",
+			"CodeBuddy/CodeBuddy.exe",
+			"CodeBuddy CN/CodeBuddy CN.exe",
+			"CodeBuddy IDE/CodeBuddy IDE.exe",
+		],
+		"mac": [
+			"CodeBuddy.app/Contents/MacOS/CodeBuddy",
+			"CodeBuddy.app/Contents/Resources/app/bin/code",
+			"CodeBuddy IDE.app/Contents/MacOS/CodeBuddy IDE",
+			"CodeBuddy IDE.app/Contents/Resources/app/bin/code",
+		],
+		"linux": [
+			"~/.local/bin/codebuddy",
+			"/usr/bin/codebuddy",
+			"/usr/share/codebuddy/codebuddy",
+		],
+	},
+	{
+		"id": "trae",
+		"label": "TRAE",
+		"cli": ["trae"],
+		"prefixes": ["trae"],
+		"exes": ["Trae.exe", "Trae CN.exe"],
+		"win": [
+			"Programs/Trae/Trae.exe",
+			"Programs/Trae CN/Trae CN.exe",
+			"Programs/trae/Trae.exe",
+			"Trae/Trae.exe",
+			"Trae CN/Trae CN.exe",
+		],
+		"mac": [
+			"Trae.app/Contents/MacOS/Trae",
+			"Trae.app/Contents/Resources/app/bin/trae",
+			"Trae CN.app/Contents/MacOS/Trae CN",
+			"Trae CN.app/Contents/MacOS/Trae",
+			"Trae CN.app/Contents/Resources/app/bin/trae",
+		],
+		"linux": ["~/.local/bin/trae", "/usr/bin/trae", "/usr/share/trae/trae"],
+	},
+]
 
 
 func _external_editor_enabled() -> bool:
@@ -1671,37 +1781,200 @@ func _is_external_editor_exec_valid(path: String) -> bool:
 	return FileAccess.file_exists(trimmed)
 
 
+func _external_editor_ide_ids() -> PackedStringArray:
+	var ids: PackedStringArray = PackedStringArray()
+	for entry: Dictionary in _EXTERNAL_EDITOR_IDES:
+		var ide_id: String = str(entry.get("id", "")).strip_edges()
+		if not ide_id.is_empty():
+			ids.append(ide_id)
+	return ids
+
+
+func _external_editor_ide_entry(ide_id: String) -> Dictionary:
+	for entry: Dictionary in _EXTERNAL_EDITOR_IDES:
+		if str(entry.get("id", "")) == ide_id:
+			return entry
+	return {}
+
+
+func _external_editor_ide_label(ide_id: String) -> String:
+	var entry: Dictionary = _external_editor_ide_entry(ide_id)
+	var label: String = str(entry.get("label", "")).strip_edges()
+	return label if not label.is_empty() else "外部编辑器"
+
+
+func _external_editor_saved_ide_id() -> String:
+	var settings: EditorSettings = get_editor_interface().get_editor_settings()
+	var ide_id: String = str(
+		settings.get_project_metadata(
+			_EXTERNAL_EDITOR_IDE_META_SECTION,
+			_EXTERNAL_EDITOR_IDE_META_KEY,
+			"",
+		)
+	).strip_edges()
+	if _external_editor_ide_entry(ide_id).is_empty():
+		return ""
+	return ide_id
+
+
+func _save_external_editor_ide_id(ide_id: String) -> void:
+	if _external_editor_ide_entry(ide_id).is_empty():
+		return
+	var settings: EditorSettings = get_editor_interface().get_editor_settings()
+	settings.set_project_metadata(
+		_EXTERNAL_EDITOR_IDE_META_SECTION,
+		_EXTERNAL_EDITOR_IDE_META_KEY,
+		ide_id,
+	)
+
+
+func _guess_external_editor_ide_id(exec_path: String) -> String:
+	var lower: String = exec_path.strip_edges().replace("\\", "/").to_lower()
+	if lower.is_empty():
+		return ""
+	if lower.contains("codebuddy"):
+		return "codebuddy"
+	if lower.contains("trae"):
+		return "trae"
+	if lower.contains("cursor"):
+		return "cursor"
+	if (
+		lower.contains("visual studio code")
+		or lower.contains("microsoft vs code")
+		or lower.contains("code.exe")
+		or lower.contains("code.cmd")
+		or lower.ends_with("/code")
+	):
+		return "vscode"
+	return ""
+
+
+## 下拉应选中的 IDE：已保存选择 > 按现有执行路径推断 > 首个已安装 > 首个候选。
+func _external_editor_selected_ide_id() -> String:
+	var saved: String = _external_editor_saved_ide_id()
+	if not saved.is_empty():
+		return saved
+	var guessed: String = _guess_external_editor_ide_id(_external_editor_exec_path_setting())
+	if not guessed.is_empty():
+		return guessed
+	var ids: PackedStringArray = _external_editor_ide_ids()
+	for ide_id: String in ids:
+		if not _resolve_external_editor_exec_for_ide(ide_id).is_empty():
+			return ide_id
+	return ids[0] if not ids.is_empty() else ""
+
+
+func _sync_external_editor_ide_option() -> void:
+	if _external_editor_ide_opt == null:
+		return
+	var ids: PackedStringArray = _external_editor_ide_ids()
+	if ids.is_empty():
+		return
+	var index: int = ids.find(_external_editor_selected_ide_id())
+	_external_editor_ide_opt.set_block_signals(true)
+	_external_editor_ide_opt.select(index if index >= 0 else 0)
+	_external_editor_ide_opt.set_block_signals(false)
+
+
+func _on_external_editor_ide_selected(index: int) -> void:
+	_set_dock_status("general", "")
+	var ids: PackedStringArray = _external_editor_ide_ids()
+	if index < 0 or index >= ids.size():
+		return
+	var ide_id: String = ids[index]
+	var label: String = _external_editor_ide_label(ide_id)
+	var settings: EditorSettings = get_editor_interface().get_editor_settings()
+	_save_external_editor_ide_id(ide_id)
+	_external_editor_probe_cache.erase(ide_id)
+	var resolved: String = _resolve_external_editor_exec_for_ide(ide_id)
+	if resolved.is_empty():
+		var missing: String = "未找到 %s 的可执行文件；打开时会再次探测，也可在编辑器设置中手动填写执行路径。"
+		_set_dock_status("general", missing % label)
+		return
+	settings.set_setting(_EXTERNAL_EDITOR_PATH, resolved)
+	if not bool(settings.get_setting(_EXTERNAL_EDITOR_USE)):
+		settings.set_setting(_EXTERNAL_EDITOR_USE, true)
+	var flags: String = str(settings.get_setting(_EXTERNAL_EDITOR_FLAGS)).strip_edges()
+	if flags.is_empty():
+		settings.set_setting(_EXTERNAL_EDITOR_FLAGS, _EXTERNAL_EDITOR_DEFAULT_FLAGS)
+	_invalidate_external_editor_exec_cache()
+	_set_dock_status("general", "外部编辑器：%s（%s）" % [label, resolved])
+
+
 func _ensure_external_editor_ready_for_project() -> bool:
 	var settings: EditorSettings = get_editor_interface().get_editor_settings()
+	_external_editor_probe_cache.clear()
+	var saved_ide: String = _external_editor_saved_ide_id()
+	var ide_id: String = saved_ide
+	if ide_id.is_empty():
+		ide_id = _external_editor_selected_ide_id()
 	var path: String = _external_editor_exec_path_setting()
 	var notes: PackedStringArray = PackedStringArray()
+	var resolved: String = ""
+	# 自动推断出的 IDE，与手动路径不冲突时才写回项目元数据。
+	var ide_to_save: String = ""
 
-	if not _is_external_editor_exec_valid(path):
+	if not ide_id.is_empty():
+		resolved = _resolve_external_editor_exec_for_ide(ide_id)
+	if resolved.is_empty() and _is_external_editor_exec_valid(path):
+		# 手动填写的执行路径优先，但需与下拉所选 IDE 一致。
+		var path_ide: String = _guess_external_editor_ide_id(path)
+		if path_ide == ide_id or path_ide.is_empty() or saved_ide.is_empty():
+			resolved = path
+			if saved_ide.is_empty() and not path_ide.is_empty():
+				ide_to_save = path_ide
+	if resolved.is_empty() and saved_ide.is_empty():
+		# 尚未手动选择 IDE：退回任一已安装的受支持 IDE。
 		var detected: String = _detect_external_editor_exec_path()
-		if detected.is_empty():
-			if _external_editor_setup_dialog != null:
-				_external_editor_setup_dialog.popup_centered()
-			_set_dock_status(
-				"general",
-				"未能自动配置外部编辑器，请手动设置执行路径。",
-			)
-			return false
-		settings.set_setting(_EXTERNAL_EDITOR_PATH, detected)
-		path = detected
-		notes.append("已自动填入执行路径")
-		var flags: String = str(settings.get_setting(_EXTERNAL_EDITOR_FLAGS)).strip_edges()
-		if flags.is_empty():
-			settings.set_setting(_EXTERNAL_EDITOR_FLAGS, _EXTERNAL_EDITOR_DEFAULT_FLAGS)
-			notes.append("已设置默认启动参数 {project}")
+		if not detected.is_empty():
+			resolved = detected
+			ide_to_save = _guess_external_editor_ide_id(detected)
 
+	if resolved.is_empty():
+		var label: String = _external_editor_ide_label(ide_id)
+		if _external_editor_setup_dialog != null:
+			_external_editor_setup_dialog.dialog_text = (
+				"未能找到 %s 的可执行文件。\n\n" % label
+				+ "请在 GDFrame 面板「通用」页签换一个 IDE，或打开：\n"
+				+ "编辑器 → 编辑器设置 → 文本编辑器 → 外部\n"
+				+ "填写「执行路径」，勾选「使用外部编辑器」，然后重试。"
+			)
+			_external_editor_setup_dialog.popup_centered()
+		_set_dock_status("general", "未找到 %s 的可执行文件，请手动设置执行路径。" % label)
+		return false
+
+	if resolved != path:
+		settings.set_setting(_EXTERNAL_EDITOR_PATH, resolved)
+		notes.append("已填入执行路径")
+	var flags: String = str(settings.get_setting(_EXTERNAL_EDITOR_FLAGS)).strip_edges()
+	if flags.is_empty():
+		settings.set_setting(_EXTERNAL_EDITOR_FLAGS, _EXTERNAL_EDITOR_DEFAULT_FLAGS)
+		notes.append("已设置默认启动参数 {project}")
 	if not bool(settings.get_setting(_EXTERNAL_EDITOR_USE)):
 		settings.set_setting(_EXTERNAL_EDITOR_USE, true)
 		notes.append("已启用外部编辑器")
+	if saved_ide.is_empty() and not ide_to_save.is_empty():
+		_save_external_editor_ide_id(ide_to_save)
 
 	_invalidate_external_editor_exec_cache()
+	_sync_external_editor_ide_option()
 	if not notes.is_empty():
 		_set_dock_status("general", "%s。" % "；".join(notes))
 	return true
+
+
+func _resolve_external_editor_exec_for_ide(ide_id: String) -> String:
+	if ide_id.is_empty():
+		return ""
+	if _external_editor_probe_cache.has(ide_id):
+		return _external_editor_probe_cache[ide_id]
+	var resolved: String = ""
+	for candidate: String in _external_editor_candidate_paths(ide_id):
+		if _is_external_editor_exec_valid(candidate):
+			resolved = candidate
+			break
+	_external_editor_probe_cache[ide_id] = resolved
+	return resolved
 
 
 func _detect_external_editor_exec_path() -> String:
@@ -1712,50 +1985,145 @@ func _detect_external_editor_exec_path() -> String:
 	return ""
 
 
-func _external_editor_candidate_paths() -> PackedStringArray:
+func _external_editor_candidate_paths(ide_id: String = "") -> PackedStringArray:
 	var out: PackedStringArray = PackedStringArray()
 	var os_name: String = OS.get_name()
+	for entry: Dictionary in _EXTERNAL_EDITOR_IDES:
+		var entry_id: String = str(entry.get("id", ""))
+		if not ide_id.is_empty() and entry_id != ide_id:
+			continue
+		for candidate: String in _external_editor_ide_os_paths(entry, os_name):
+			if not candidate.is_empty() and not out.has(candidate):
+				out.append(candidate)
+	return out
+
+
+func _external_editor_ide_os_paths(entry: Dictionary, os_name: String) -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	var cli_names: PackedStringArray = _variant_to_string_array(entry.get("cli", []))
 	match os_name:
 		"Windows":
-			var local_app: String = OS.get_environment("LOCALAPPDATA").replace("\\", "/")
-			var prog_files: String = OS.get_environment("ProgramFiles").replace("\\", "/")
-			var prog_files_x86: String = OS.get_environment("ProgramFiles(x86)").replace("\\", "/")
-			for base: String in [local_app, prog_files, prog_files_x86]:
+			var roots: PackedStringArray = PackedStringArray([
+				OS.get_environment("LOCALAPPDATA"),
+				OS.get_environment("ProgramFiles"),
+				OS.get_environment("ProgramFiles(x86)"),
+			])
+			for install_root: String in roots:
+				var base: String = install_root.replace("\\", "/").rstrip("/")
 				if base.is_empty():
 					continue
-				out.append("%s/Programs/cursor/Cursor.exe" % base)
-				out.append("%s/Programs/Cursor/Cursor.exe" % base)
-				out.append("%s/cursor/Cursor.exe" % base)
-				out.append("%s/Cursor/Cursor.exe" % base)
-				out.append("%s/Programs/Microsoft VS Code/Code.exe" % base)
-				out.append("%s/Microsoft VS Code/Code.exe" % base)
-			out.append_array(_which_command_paths(["cursor.cmd", "cursor.exe", "cursor", "code.cmd", "code.exe", "code"]))
+				for win_rel: String in _variant_to_string_array(entry.get("win", [])):
+					out.append("%s/%s" % [base, win_rel])
 		"macOS":
-			var home: String = OS.get_environment("HOME")
+			var home: String = OS.get_environment("HOME").replace("\\", "/").rstrip("/")
 			var app_roots: PackedStringArray = PackedStringArray(["/Applications"])
 			if not home.is_empty():
 				app_roots.append("%s/Applications" % home)
-			for root: String in app_roots:
-				out.append("%s/Cursor.app/Contents/MacOS/Cursor" % root)
-				out.append("%s/Cursor.app/Contents/Resources/app/bin/cursor" % root)
-				out.append(
-					"%s/Visual Studio Code.app/Contents/Resources/app/bin/code" % root
-				)
-				out.append("%s/Visual Studio Code.app/Contents/MacOS/Electron" % root)
-				out.append("%s/Code.app/Contents/Resources/app/bin/code" % root)
-				out.append("%s/Code.app/Contents/MacOS/Electron" % root)
-			out.append_array(_which_command_paths(["cursor", "code"]))
+			for app_root: String in app_roots:
+				for mac_rel: String in _variant_to_string_array(entry.get("mac", [])):
+					out.append("%s/%s" % [app_root, mac_rel])
 		_:
-			var home_unix: String = OS.get_environment("HOME")
-			if not home_unix.is_empty():
-				out.append("%s/.local/bin/cursor" % home_unix)
-				out.append("%s/.local/bin/code" % home_unix)
-			out.append("/usr/bin/cursor")
-			out.append("/usr/bin/code")
-			out.append("/usr/share/cursor/cursor")
-			out.append("/usr/share/code/bin/code")
-			out.append("/snap/bin/code")
-			out.append_array(_which_command_paths(["cursor", "code"]))
+			var home_unix: String = OS.get_environment("HOME").replace("\\", "/").rstrip("/")
+			for linux_path: String in _variant_to_string_array(entry.get("linux", [])):
+				if linux_path.begins_with("~"):
+					if home_unix.is_empty():
+						continue
+					out.append("%s/%s" % [home_unix, linux_path.trim_prefix("~/")])
+				else:
+					out.append(linux_path)
+	# 扫描到的真实安装目录优先于 PATH 里的启动脚本（.cmd 无法被 create_process 直接执行）。
+	out.append_array(_scan_external_editor_installs(entry, os_name))
+	out.append_array(_which_command_paths(cli_names))
+	return out
+
+
+## 扫描安装根目录下与 IDE 名称前缀匹配的目录，适配不同发行版目录名（如 CodeBuddy CN、Trae CN）。
+func _scan_external_editor_installs(entry: Dictionary, os_name: String) -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	var prefixes: PackedStringArray = _variant_to_string_array(entry.get("prefixes", []))
+	if prefixes.is_empty():
+		return out
+	var exe_names: PackedStringArray = _variant_to_string_array(entry.get("exes", []))
+	var cli_names: PackedStringArray = _variant_to_string_array(entry.get("cli", []))
+	match os_name:
+		"Windows":
+			for root: String in _external_editor_windows_scan_roots():
+				for dir_name: String in DirAccess.get_directories_at(root):
+					if not _external_editor_name_matches(dir_name, prefixes):
+						continue
+					for exe_name: String in exe_names:
+						out.append("%s/%s/%s" % [root, dir_name, exe_name])
+		"macOS":
+			for root: String in _external_editor_mac_scan_roots():
+				for dir_name: String in DirAccess.get_directories_at(root):
+					if not dir_name.ends_with(".app"):
+						continue
+					var stem: String = dir_name.trim_suffix(".app")
+					if not _external_editor_name_matches(stem, prefixes):
+						continue
+					var app_path: String = "%s/%s" % [root, dir_name]
+					out.append("%s/Contents/MacOS/%s" % [app_path, stem])
+					for exe_name: String in exe_names:
+						out.append("%s/Contents/MacOS/%s" % [app_path, exe_name.get_basename()])
+					for cli_name: String in cli_names:
+						out.append("%s/Contents/Resources/app/bin/%s" % [app_path, cli_name])
+		_:
+			for root: String in ["/opt", "/usr/share"]:
+				for dir_name: String in DirAccess.get_directories_at(root):
+					if not _external_editor_name_matches(dir_name, prefixes):
+						continue
+					out.append("%s/%s/%s" % [root, dir_name, dir_name])
+					for cli_name: String in cli_names:
+						out.append("%s/%s/%s" % [root, dir_name, cli_name])
+	return out
+
+
+func _external_editor_name_matches(name: String, prefixes: PackedStringArray) -> bool:
+	var lower: String = name.strip_edges().to_lower()
+	if lower.is_empty():
+		return false
+	for prefix: String in prefixes:
+		if lower.begins_with(prefix):
+			return true
+	return false
+
+
+func _external_editor_windows_scan_roots() -> PackedStringArray:
+	var roots: PackedStringArray = PackedStringArray()
+	var local_app: String = OS.get_environment("LOCALAPPDATA").replace("\\", "/").rstrip("/")
+	if not local_app.is_empty():
+		roots.append("%s/Programs" % local_app)
+		roots.append(local_app)
+	for env_name: String in ["ProgramFiles", "ProgramFiles(x86)"]:
+		var base: String = OS.get_environment(env_name).replace("\\", "/").rstrip("/")
+		if not base.is_empty() and not roots.has(base):
+			roots.append(base)
+	var existing: PackedStringArray = PackedStringArray()
+	for root: String in roots:
+		if DirAccess.dir_exists_absolute(root) and not existing.has(root):
+			existing.append(root)
+	return existing
+
+
+func _external_editor_mac_scan_roots() -> PackedStringArray:
+	var roots: PackedStringArray = PackedStringArray(["/Applications"])
+	var home: String = OS.get_environment("HOME").replace("\\", "/").rstrip("/")
+	if not home.is_empty():
+		var user_apps: String = "%s/Applications" % home
+		if DirAccess.dir_exists_absolute(user_apps):
+			roots.append(user_apps)
+	return roots
+
+
+func _variant_to_string_array(value: Variant) -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	if not (value is Array):
+		return out
+	var items: Array = value as Array
+	for item: Variant in items:
+		var text: String = str(item).strip_edges()
+		if not text.is_empty():
+			out.append(text)
 	return out
 
 

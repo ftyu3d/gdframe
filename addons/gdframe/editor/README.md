@@ -609,7 +609,7 @@ GDFrame.audio.play_voice(line_stream)              # 默认 Voice 轨
 
 | 页签 | 功能 |
 |------|------|
-| **通用** | `ui_max_layer`、存档格式、`config.tres` 定位与同步、初始化本地化 CSV、外部编辑器打开仓库根或本工程、清空存档等 |
+| **通用** | `ui_max_layer`、存档格式、`config.tres` 定位与同步、初始化本地化 CSV、外部编辑器下拉（VS Code / Cursor / CodeBuddy / TRAE，写入编辑器设置 `text_editor/external/exec_path`）打开仓库根或本工程、清空存档等 |
 | **UI管理** | 创建 `ui_*`、模糊搜索列表、编辑层 / 遮罩 / 是否参与导航、定位 / 打开 / 更名 / 删除（运行中禁止写操作） |
 | **状态机** | 在 `FSM_ROOT` 创建/管理状态机与状态（**运行中禁止**增删改） |
 | **对象池** | 运行中调试 `pool.get_stats`（F5 运行且调试器已连接时点 **刷新**） |

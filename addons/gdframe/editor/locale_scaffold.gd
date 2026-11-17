@@ -223,7 +223,9 @@ func _merge_builtin_into_existing(builtin_table: Dictionary) -> Dictionary:
 	header.append_array(locales)
 	var lines: PackedStringArray = PackedStringArray([",".join(header)])
 	var keys_sorted: Array = values.keys()
-	keys_sorted.sort()
+	keys_sorted.sort_custom(func(a: Variant, b: Variant) -> bool:
+		return _locale_key_before(str(a), str(b))
+	)
 	for key: String in keys_sorted:
 		var locale_map: Dictionary = values[key]
 		var row: PackedStringArray = PackedStringArray([key])
@@ -387,6 +389,36 @@ func _split_csv_line_quoted(line: String) -> PackedStringArray:
 		return PackedStringArray()  # 未闭合引号
 	out.append(field)
 	return out
+
+
+## 与 DHLocale 保存规则一致：ITEM_NAME 按编号数值排，其余键按字符串排。
+func _locale_key_before(a: String, b: String) -> bool:
+	var ap := _locale_sort_prefix(a)
+	var bp := _locale_sort_prefix(b)
+	if ap != bp:
+		return ap < bp
+	return _locale_sort_id(a) < _locale_sort_id(b)
+
+
+func _locale_sort_prefix(key: String) -> String:
+	if _locale_item_name_id(key) >= 0:
+		return "ITEM_NAME_"
+	return key
+
+
+func _locale_sort_id(key: String) -> int:
+	var id := _locale_item_name_id(key)
+	return id if id >= 0 else -1
+
+
+func _locale_item_name_id(key: String) -> int:
+	const PREFIX := "ITEM_NAME_"
+	if not key.begins_with(PREFIX):
+		return -1
+	var rest := key.substr(PREFIX.length())
+	if rest.is_empty() or not rest.is_valid_int():
+		return -1
+	return int(rest)
 
 
 func _normalize_csv_line(line: String) -> String:
