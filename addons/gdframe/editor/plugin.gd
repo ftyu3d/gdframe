@@ -457,6 +457,10 @@ func _build_dock() -> void:
 	page_container.add_child(settings_page)
 	_page_map[PAGE_SETTINGS] = settings_page
 
+	var update_page: Variant = _build_update_page()
+	page_container.add_child(update_page)
+	_page_map[PAGE_UPDATE] = update_page
+
 	_rebuild_extension_dock_tabs()
 
 	_toggle_general.button_pressed = true
