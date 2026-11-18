@@ -476,6 +476,13 @@ func _hide_dim() -> void:
 
 
 func _instantiate_dim() -> Control:
+	var scene := (get_parent() as GDFrameRoot).dim_scene
+	if scene != null:
+		var instance := scene.instantiate()
+		if instance is Control:
+			return instance
+		instance.free()
+		push_error("GDFrame: dim_scene 的根节点须为 Control")
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.5)
 	return dim

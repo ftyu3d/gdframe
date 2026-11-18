@@ -84,17 +84,6 @@ func _ready() -> void:
 		if not host.has_service(id):
 			get_tree().quit(2)
 			return
-	if not host.has_service(&"audio"):
-		host.audio.play_bgm(null)
-		if host.audio.play_ui_sfx(null) or host.audio.is_bgm_playing():
-			get_tree().quit(3)
-			return
-	if not host.has_service(&"pool") and host.pool.get_item(&"missing") != null:
-		get_tree().quit(4)
-		return
-	if not host.has_service(&"fsm") and host.fsm.bind(&"missing", &"idle", self) != null:
-		get_tree().quit(5)
-		return
 	if host.ui.get_child_count() != 0:
 		get_tree().quit(8)
 		return
@@ -131,14 +120,14 @@ func _ready() -> void:
 			get_tree().quit(17)
 			return
 	if host.has_service(&"pool"):
-		if not host.pool.register_scene(&"panel", panel):
+		if not host.get_service(&"pool").register_scene(&"panel", panel):
 			get_tree().quit(13)
 			return
-		var item := host.pool.get_item(&"panel", self) as Node
+		var item := host.get_service(&"pool").get_item(&"panel", self) as Node
 		if item == null:
 			get_tree().quit(14)
 			return
-		host.pool.recycle_item(&"panel", item)
+		host.get_service(&"pool").recycle_item(&"panel", item)
 		host.get_service(&"pool").clear(&"panel", true)
 	if host.has_service(&"rumble"):
 		var rumble := host.get_service(&"rumble")
@@ -205,6 +194,7 @@ try {
                 $included = [bool]($paths -like "addons/gdframe_$id/*")
                 if ($included -ne ($enabled -contains $id)) { throw "Export mismatch for $id ($selection)" }
             }
+            if ($paths -match "addons/gdframe/runtime/(audio/|pool_api|fsm_api)") { throw "Optional API shell in core export" }
             if ($paths -like "addons/gdframe/editor/*") { throw "Editor scripts in export" }
         } finally { $archive.Dispose() }
         Run-Smoke $isolated (@("--main-pack", $zip, "--quit-after", "120", "--") + $enabled)

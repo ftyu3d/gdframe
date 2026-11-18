@@ -9,9 +9,9 @@ const TEMPLATE := """[gd_scene format=3]
 [node name="GDFrame" instance=ExtResource("base")]
 """
 const ExportFilter = preload("export_filter.gd")
-const Dock = preload("module_dock.gd")
+const Dock = preload("dock.gd")
 var _filter := ExportFilter.new()
-var _dock: VBoxContainer
+var _dock: HBoxContainer
 
 
 func _enter_tree() -> void:
@@ -23,7 +23,7 @@ func _enter_tree() -> void:
 			return
 		file.store_string(TEMPLATE)
 		file.close()
-	_dock = Dock.new(COMPOSITION, get_undo_redo())
+	_dock = Dock.new(self, COMPOSITION)
 	add_control_to_bottom_panel(_dock, "GDFrame")
 	scene_changed.connect(_dock.refresh.unbind(1))
 	# Fresh CI checkouts can enable the plugin directly in project.godot.

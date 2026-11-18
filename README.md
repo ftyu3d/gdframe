@@ -18,10 +18,11 @@ Godot 4.7+ 的 GDScript 游戏框架。启用插件后，Autoload `GDFrame` 提�
 | `GDFrame.input` | 识别键盘、鼠标、触屏和手柄，发出 `device_changed`，按设备调整光标与导航 |
 | `GDFrame.settings` | 显示模式、窗口尺寸、帧率、垂直同步与语言 |
 | `GDFrame.save` | 保存和恢复基础设置、扩展状态和项目数据，包含临时文件与备份恢复 |
-| `GDFrame.audio`、`GDFrame.fsm`、`GDFrame.pool` | 三个随核心提供的类型化接口，未启用时分别静默、返回空句柄、返回空实例 |
 | `has_service(id)`、`get_service(id)`、`service_ids()` | 检查当前组合，取得实现或枚举已注册的服务 |
 
-在 `gdframe.tscn` 根节点的检查器中可设置 UI 图层数和键盘导航焦点。界面场景的根节点脚本继承 `GDFrameUIBase`。在业务节点的检查器里将菜单场景赋给 `menu_scene`，这样选择性导出也会包含它。
+底部 **GDFrame Dock** 保留通用、扩展管理、UI 管理、设置项、更新五个页面。通用页直接配置 UI 图层数、键盘导航焦点、外部 IDE、本地化与档案；UI 页创建并显式注册场景；设置项页编辑新档案的字典默认值。扩展管理支持创建、启停、排序、删除、在线安装和更新。更新页选择 GitHub/Gitee 下载源及版本。修改模块后可点「生成项目类型入口」，生成项目自己的服务属性，保留类型提示。
+
+在 `gdframe.tscn` 根节点的检查器中也可设置 UI 图层数和键盘导航焦点。界面场景的根节点脚本继承 `GDFrameUIBase`。在业务节点的检查器里将菜单场景赋给 `menu_scene`，这样选择性导出也会包含它。
 
 ```gdscript
 @export var menu_scene: PackedScene
@@ -45,7 +46,7 @@ func save_preferences() -> void:
 
 ## 模块契约与导出
 
-扩展入口约定为 `res://addons/gdframe_<id>/module.tres`。其中 `entry` 指向同目录的 `module.gd`，`dependencies` 显式列出运行时脚本和资源。入口脚本实现 `static func create_service(host: GDFrameRoot)`，返回一个 Node 或 RefCounted。核心按清单顺序创建服务，接管 Node 的生命周期。在 `host.services_ready` 回调里连接其他可选服务。服务可实现 `capture_state() -> Dictionary` 和 `restore_state(state: Dictionary)` 接入档案。业务依赖完整实现时，可用 `GDFrame.get_service(&"pool") as GDFrameNodePool` 获得扩展的类型提示。
+扩展入口约定为 `res://addons/gdframe_<id>/module.tres`。其中 `entry` 指向同目录的 `module.gd`，`dependencies` 显式列出运行时脚本和资源。入口脚本实现 `static func create_service(host: GDFrameRoot)`，返回一个 Node 或 RefCounted。核心按清单顺序创建服务，接管 Node 的生命周期。在 `host.services_ready` 回调里连接其他可选服务。服务可实现 `capture_state() -> Dictionary` 和 `restore_state(state: Dictionary)` 接入档案。核心不声明可选扩展的 API 或空实现。业务依赖完整实现时，可用 `GDFrame.get_service(&"pool") as GDFrameNodePool` 获得扩展的类型提示。
 
 游戏启动只读取场景引用的模块。导出时保持 GDFrame 插件启用，即使选择「导出所有资源」，过滤器也会跳过未选中的 `gdframe_<id>/module.tres` 所在扩展目录，并排除核心编辑器脚本。静态引用某个扩展类型的业务代码需要选择对应扩展。选择性导出时，项目自己的 UI、状态定义等资产可通过场景或资源的导出属性引用。仅在脚本中加载的资产需加入导出预设。
 
@@ -54,6 +55,7 @@ func save_preferences() -> void:
 ## 构建与验证
 
 - Windows 运行 `tools/pack_release.bat`，macOS/Linux 运行 `bash tools/pack_release.sh`，得到 `dist/gdframe.zip`。
+- Dock 操作验证运行 `powershell -ExecutionPolicy Bypass -File tools/test_dock.ps1 -Godot <Godot可执行文件>`。
 - 将 gdframe-ext 放在同级目录后，运行 `powershell -ExecutionPolicy Bypass -File tools/test_composition.ps1 -Godot <Godot可执行文件>`。可用 `-Extensions` 指定其他检出位置。
 
 [MIT License](LICENSE)

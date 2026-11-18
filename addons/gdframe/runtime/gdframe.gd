@@ -4,6 +4,10 @@ extends Node
 @export var modules: Array[GDFrameModule] = []
 @export_range(1, 64) var ui_layers := 3
 @export var keyboard_nav_focus := true
+@export var ui_scenes: Array[PackedScene] = []
+@export var dim_scene: PackedScene
+## 新档案的初始字典。服务设置使用对应的服务 ID 作为键。
+@export var profile_defaults: Dictionary = {}
 
 ## 所有服务完成注册后发出，用于连接可选的兄弟服务。
 signal services_ready
@@ -13,9 +17,6 @@ var input: GDFrameInputDeviceTracker
 var settings: GDFrameSettingsManager
 var save := GDFrameSaveManager.new()
 
-var audio: GDFrameAudioApi = GDFrameAudioApi.new()
-var pool: GDFramePoolApi = GDFramePoolApi.new()
-var fsm: GDFrameFSMApi = GDFrameFSMApi.new()
 var _services: Dictionary[StringName, Object] = {}
 
 
@@ -44,6 +45,9 @@ func _ready() -> void:
 	add_child(ui)
 	add_child(settings)
 	add_child(input)
+	for scene in ui_scenes:
+		if scene != null:
+			ui.register_scene(StringName(scene.resource_path.get_file().get_basename()), scene)
 	save.setup(self)
 	for descriptor in modules:
 		if descriptor == null or descriptor.entry == null:
@@ -61,22 +65,6 @@ func _ready() -> void:
 		if service == null:
 			push_error("GDFrame: %s 初始化失败" % id)
 			continue
-		match id:
-			&"audio":
-				if not service is GDFrameAudioApi:
-					push_error("GDFrame: audio 须继承 GDFrameAudioApi")
-					continue
-				audio = service
-			&"pool":
-				if not service is GDFramePoolApi:
-					push_error("GDFrame: pool 须继承 GDFramePoolApi")
-					continue
-				pool = service
-			&"fsm":
-				if not service is GDFrameFSMApi:
-					push_error("GDFrame: fsm 须继承 GDFrameFSMApi")
-					continue
-				fsm = service
 		_services[id] = service
 		if service is Node:
 			service.name = id
