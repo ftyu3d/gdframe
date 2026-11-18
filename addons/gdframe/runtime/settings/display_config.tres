@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="GDFrameDisplayConfig" format=3]
+
+[ext_resource type="Script" path="res://addons/gdframe/runtime/settings/display_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")

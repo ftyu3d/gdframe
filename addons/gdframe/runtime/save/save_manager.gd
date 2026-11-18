@@ -15,6 +15,7 @@ const PROFILE_FILE: String = PROFILE_BASENAME + ".tres"
 # State
 # =============================================================================
 
+var _host: GDFrameRoot
 var _profile: GDFrameProfileResource
 var _user_root: String = ""
 var _profile_disk_path: String = ""
@@ -27,10 +28,10 @@ var profile_saved_hook: Callable = Callable()
 # Setup & profile
 # =============================================================================
 
-func setup() -> StringName:
+func setup(host: GDFrameRoot) -> StringName:
+	_host = host
 	_user_root = USER_ROOT_URL
 	_rebuild_paths()
-	_ensure_dir(_user_root)
 	var recover_err: StringName = recover_all_pending_saves()
 	_profile = _load_profile_from_disk()
 	return recover_err
@@ -42,6 +43,10 @@ func startup_recovery_error() -> StringName:
 
 ## 将内存档案原子写入磁盘（[code].tmp[/code]→正式档），成功后内存实例 [code]take_over_path[/code]。
 func flush() -> StringName:
+	for id in _host.service_ids():
+		var service := _host.get_service(id)
+		if service.has_method(&"capture_state"):
+			_profile.data[id] = service.call(&"capture_state")
 	var err: StringName = _save_profile()
 	if profile_saved_hook.is_valid():
 		profile_saved_hook.call(err)
@@ -49,13 +54,19 @@ func flush() -> StringName:
 
 
 func flush_async() -> StringName:
-	await GDFrame.get_tree().process_frame
+	await (Engine.get_main_loop() as SceneTree).process_frame
 	return flush()
 
 
+func restore_services() -> void:
+	for id in _host.service_ids():
+		var service := _host.get_service(id)
+		if service.has_method(&"restore_state"):
+			var state: Variant = _profile.data.get(id, {})
+			service.call(&"restore_state", state if state is Dictionary else {})
+
+
 func get_profile() -> GDFrameProfileResource:
-	if _profile.settings == null:
-		_profile.ensure_children()
 	return _profile
 
 
@@ -64,6 +75,7 @@ func delete_profile_from_disk() -> StringName:
 	if not GDFrameSaveSidecarPaths.remove_all_path_variants(_profile_disk_path):
 		return GDFrameResult.ERR_SAVE_DELETE_FAILED
 	_profile = _new_default_profile()
+	restore_services()
 	return GDFrameResult.OK
 
 
@@ -73,7 +85,6 @@ func startup_profile_fallback() -> bool:
 
 func _save_profile() -> StringName:
 	var prof: GDFrameProfileResource = get_profile()
-	prof.ensure_children()
 	_ensure_dir(_user_root)
 	var snap: GDFrameProfileResource = prof.duplicate(true) as GDFrameProfileResource
 	if snap == null:
@@ -110,8 +121,6 @@ func _rebuild_paths() -> void:
 
 func _new_default_profile() -> GDFrameProfileResource:
 	var prof: GDFrameProfileResource = GDFrameProfileResource.new()
-	prof.ensure_children()
-	GDFrameSettingsManager.apply_display_defaults(prof.settings)
 	return prof
 
 
@@ -127,10 +136,9 @@ func _load_profile_from_disk() -> GDFrameProfileResource:
 
 
 func _parse_profile_from_disk() -> GDFrameProfileResource:
-	var loaded: Variant = ResourceLoader.load(_profile_disk_path)
+	var loaded: Variant = ResourceLoader.load(_profile_disk_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if not loaded is GDFrameProfileResource:
 		return null
-	(loaded as GDFrameProfileResource).ensure_children()
 	return loaded as GDFrameProfileResource
 
 
@@ -138,42 +146,23 @@ func _parse_profile_from_disk() -> GDFrameProfileResource:
 # Atomic write
 # =============================================================================
 
-## profile 是已被 [code]ResourceLoader[/code] 加载的资源：不能把正式档改名移走
-## （Windows 下已加载路径可能不可删），故写 [code].tmp[/code] 后复制覆盖提交。
+## 先保存完整快照，再通过重命名提交。
 func _atomic_save_resource(res: Resource, path: String) -> StringName:
 	var side_err: StringName = _check_no_side_files(path)
 	if not GDFrameResult.is_ok(side_err):
 		return side_err
 	var tmp_path: String = GDFrameSaveSidecarPaths.tmp_path(path)
-	var abs_path: String = ProjectSettings.globalize_path(path)
 	var abs_tmp: String = ProjectSettings.globalize_path(tmp_path)
 	var save_err: Error = ResourceSaver.save(res, tmp_path)
 	if save_err != OK:
 		push_error("GDFrame Save: 写入 .tmp 失败 %s（err=%s）" % [tmp_path, save_err])
 		DirAccess.remove_absolute(abs_tmp)
 		return GDFrameResult.ERR_SAVE_WRITE_FAILED
-	if not _commit_tmp_to_main(abs_path, abs_tmp, res, path):
+	if not GDFrameSaveIO.commit_temp(path):
 		push_error("GDFrame Save: 无法提交 %s" % path)
 		DirAccess.remove_absolute(abs_tmp)
 		return GDFrameResult.ERR_SAVE_WRITE_FAILED
 	return GDFrameResult.OK
-
-
-func _commit_tmp_to_main(abs_main: String, abs_tmp: String, res: Resource, res_path: String) -> bool:
-	if not FileAccess.file_exists(abs_tmp):
-		return false
-	var committed: bool = false
-	if FileAccess.file_exists(abs_main):
-		committed = DirAccess.copy_absolute(abs_tmp, abs_main) == OK
-		if committed:
-			DirAccess.remove_absolute(abs_tmp)
-	else:
-		committed = DirAccess.rename_absolute(abs_tmp, abs_main) == OK
-	if not committed:
-		return false
-	if res != null:
-		res.take_over_path(res_path)
-	return true
 
 
 # =============================================================================
@@ -270,7 +259,7 @@ func _resource_load_ok(res_path: String) -> bool:
 			var f: FileAccess = FileAccess.open(abs_path, FileAccess.READ)
 			if f != null and f.get_length() > 0:
 				f = null
-				ok = ResourceLoader.load(res_path) != null
+				ok = ResourceLoader.load(res_path, "", ResourceLoader.CACHE_MODE_IGNORE) is GDFrameProfileResource
 	_recover_load_cache[res_path] = ok
 	return ok
 

@@ -18,7 +18,8 @@ if (Test-Path $zipPath) {
 
 Push-Location $root
 try {
-	Compress-Archive -Path "addons" -DestinationPath $zipPath -CompressionLevel Optimal
+	& tar -a -c -f $zipPath addons/gdframe
+	if ($LASTEXITCODE -ne 0) { throw "tar failed for gdframe" }
 } finally {
 	Pop-Location
 }

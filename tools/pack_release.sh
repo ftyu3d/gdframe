@@ -15,6 +15,6 @@ mkdir -p "$ROOT/dist"
 rm -f "$ZIP_PATH"
 (
 	cd "$ROOT"
-	zip -r -q "$ZIP_PATH" addons
+	zip -r -q "$ZIP_PATH" addons/gdframe
 )
 echo "Created: $ZIP_PATH"

@@ -86,14 +86,16 @@ static func _commit(path: String, abs_tmp: String, f: FileAccess) -> StringName:
 		DirAccess.remove_absolute(abs_tmp)
 		push_error("GDFrame SaveIO: 写入 .tmp 失败 %s（err=%s）" % [abs_tmp, write_err])
 		return GDFrameResult.ERR_SAVE_WRITE_FAILED
-	if not _commit_tmp(abs_tmp, path):
+	if not commit_temp(path):
 		DirAccess.remove_absolute(abs_tmp)
 		push_error("GDFrame SaveIO: 无法提交 %s" % path)
 		return GDFrameResult.ERR_SAVE_WRITE_FAILED
 	return GDFrameResult.OK
 
 
-static func _commit_tmp(abs_tmp: String, main_path: String) -> bool:
+## 提交已经关闭的临时文件，正式文件在替换失败时可从备份恢复。
+static func commit_temp(main_path: String) -> bool:
+	var abs_tmp := ProjectSettings.globalize_path(GDFrameSaveSidecarPaths.tmp_path(main_path))
 	var abs_main: String = ProjectSettings.globalize_path(main_path)
 	if not FileAccess.file_exists(abs_main):
 		return DirAccess.rename_absolute(abs_tmp, abs_main) == OK

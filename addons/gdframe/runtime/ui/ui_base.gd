@@ -1,7 +1,7 @@
 class_name GDFrameUIBase
 extends Control
 
-## GDFrame UI 基类。默认层、遮罩与是否参与导航见根节点 [b]GDFrame[/b] 分组或 Dock [b]UI管理[/b]；按次遮罩可 override [method resolve_use_dim]。
+## GDFrame UI 基类。默认层、遮罩与是否参与导航见根节点 [b]GDFrame[/b] 分组；按次遮罩可 override [method resolve_use_dim]。
 
 # =============================================================================
 # GDFrame settings
@@ -52,9 +52,10 @@ func ui_closes_on_cancel() -> bool:
 
 ## Esc 关闭行为；默认 [code]GDFrame.ui.close[/code]。子类应复用关闭按钮同款逻辑（如未保存提示）。
 func ui_cancel_close() -> void:
-	var ui_id: StringName = GDFrame.ui.get_ui_id(self)
+	var ui := (get_node("/root/GDFrame") as GDFrameRoot).ui
+	var ui_id: StringName = ui.get_ui_id(self)
 	if not ui_id.is_empty():
-		GDFrame.ui.close(ui_id)
+		ui.close(ui_id)
 
 
 # =============================================================================
@@ -225,7 +226,7 @@ func _ui_nav_release_non_text_focus() -> void:
 func ui_nav_sync_item_focus_modes() -> void:
 	if GDFrameUINav.is_suspended(self) or not _ui_nav_items_input_enabled:
 		return
-	var allow: bool = GDFrame.input.should_allow_nav_focus()
+	var allow: bool = _allows_nav_focus()
 	for item: Control in _ui_nav_items:
 		if item == null or not is_instance_valid(item):
 			continue
@@ -261,7 +262,7 @@ func ui_nav_apply_focus(control: Control) -> void:
 	if control == null or not is_instance_valid(control) or not control.is_visible_in_tree():
 		return
 	_ui_nav_last_focus = control
-	if not GDFrame.input.should_allow_nav_focus():
+	if not _allows_nav_focus():
 		return
 	_ui_nav_ensure_focusable(control)
 	if not _ui_nav_grab_focus(control):
@@ -281,7 +282,7 @@ func _ui_nav_grab_focus(control: Control) -> bool:
 func _ui_nav_deferred_grab_focus(control: Control) -> void:
 	if control == null or not is_instance_valid(control) or not control.is_visible_in_tree():
 		return
-	if not GDFrame.input.should_allow_nav_focus():
+	if not _allows_nav_focus():
 		return
 	_ui_nav_ensure_focusable(control)
 	_ui_nav_grab_focus(control)
@@ -357,3 +358,7 @@ func ui_nav_process_input(nav_action: int, focus_owner: Control = null) -> bool:
 		ui_nav_apply_focus(next)
 		return true
 	return false
+
+
+func _allows_nav_focus() -> bool:
+	return (get_node("/root/GDFrame") as GDFrameRoot).input.should_allow_nav_focus()

@@ -1,4 +1,4 @@
-extends RefCounted
+extends Node
 class_name GDFrameSettingsManager
 
 # =============================================================================
@@ -20,17 +20,15 @@ const _VALID_DISPLAY_MODES: PackedStringArray = [
 	DISPLAY_MODE_EXCLUSIVE,
 ]
 
-## [code]0[/code] 表示不限制帧率（[member Engine.max_fps]）。可选项见 [member GDFrameConfig.max_fps_options]。
+## [code]0[/code] 表示不限制帧率（[member Engine.max_fps]）。可选项见 [member GDFrameDisplayConfig.max_fps_options]。
 const MAX_FPS_UNLIMITED: int = 0
-const _EXT_RUNTIME: Script = preload("res://addons/gdframe/runtime/ext/ext_runtime.gd")
 
 # =============================================================================
 # State
 # =============================================================================
 
-var _save: GDFrameSaveManager
-var locale_changed_hook: Callable = Callable()
-var audio_apply_hook: Callable = Callable()
+var data := GDFrameSettingsData.new()
+signal locale_changed(locale: String)
 ## 档案要全屏，但浏览器只允许在玩家输入回调里进入全屏。
 var _web_fullscreen_pending: bool = false
 
@@ -39,8 +37,8 @@ var _web_fullscreen_pending: bool = false
 # Init & apply
 # =============================================================================
 
-func _init(save: GDFrameSaveManager) -> void:
-	_save = save
+func _input(event: InputEvent) -> void:
+	apply_pending_web_fullscreen(event)
 
 
 ## 项目设计分辨率（[code]display/window/size/viewport_*[/code]）。
@@ -74,19 +72,19 @@ static func default_window_size() -> Vector2i:
 	return options[mini(1, options.size() - 1)]
 
 
-static func _frame_config() -> GDFrameConfig:
-	return load(GDFrameConfig.PATH) as GDFrameConfig
+static func _frame_config() -> GDFrameDisplayConfig:
+	return preload("display_config.tres")
 
 
-## 新建档案默认显示模式，读 [member GDFrameConfig.default_display_mode]。
+## 新建档案默认显示模式，读 [member GDFrameDisplayConfig.default_display_mode]。
 static func _default_display_mode() -> String:
 	var mode: String
 	match _frame_config().default_display_mode:
-		GDFrameConfig.DefaultDisplayMode.MAXIMIZED:
+		GDFrameDisplayConfig.DefaultDisplayMode.MAXIMIZED:
 			mode = DISPLAY_MODE_MAXIMIZED
-		GDFrameConfig.DefaultDisplayMode.BORDERLESS:
+		GDFrameDisplayConfig.DefaultDisplayMode.BORDERLESS:
 			mode = DISPLAY_MODE_BORDERLESS
-		GDFrameConfig.DefaultDisplayMode.EXCLUSIVE:
+		GDFrameDisplayConfig.DefaultDisplayMode.EXCLUSIVE:
 			mode = DISPLAY_MODE_EXCLUSIVE
 		_:
 			mode = DISPLAY_MODE_WINDOWED
@@ -99,12 +97,7 @@ static func _default_display_mode() -> String:
 	return mode
 
 
-## [param bus_linear] / [param bus_muted] 留空即无音频键；
-## 音频扩展在自己的 [code]module.gd[/code] 的 [code]ensure_profile[/code] 里补齐自己的总线键。
-static func default_settings(
-	bus_linear: Dictionary = {},
-	bus_muted: Dictionary = {},
-) -> Dictionary[String, Variant]:
+static func default_settings() -> Dictionary[String, Variant]:
 	var size: Vector2i = (
 		project_viewport_size()
 		if OS.has_feature("web") or OS.has_feature("android")
@@ -117,8 +110,6 @@ static func default_settings(
 		"vsync_enabled": true,
 		"max_fps": MAX_FPS_UNLIMITED,
 		"locale": LOCALE_AUTOMATIC,
-		"bus_linear": bus_linear.duplicate(),
-		"bus_muted": bus_muted.duplicate(),
 	}
 
 
@@ -164,24 +155,14 @@ func apply_startup_window() -> void:
 	_apply_display(s.display_mode, _window_size_from_settings(s))
 
 
-## 应用档案中的显示与语言，并回调音频与语言广播。
+## 应用显示设置并通知界面更新语言。
 func apply() -> void:
 	apply_from_profile()
-	if audio_apply_hook.is_valid():
-		audio_apply_hook.call()
 	_notify_locale()
 
 
 func default_snapshot() -> Dictionary:
-	var modules: Array[Script] = _EXT_RUNTIME.get_modules()
-	var merged: Dictionary = _EXT_RUNTIME.merge_extra_bus_defaults(
-		{
-			"bus_linear": {},
-			"bus_muted": {},
-		},
-		modules,
-	)
-	return default_settings(merged["bus_linear"], merged["bus_muted"])
+	return default_settings()
 
 
 # =============================================================================
@@ -272,9 +253,9 @@ static func display_mode_options() -> Array[Dictionary]:
 	]
 
 
-## 推荐窗口化分辨率：可用区最大适配尺寸 + [member GDFrameConfig.window_size_scale_steps]，按面积降序。
+## 推荐窗口化分辨率：可用区最大适配尺寸 + [member GDFrameDisplayConfig.window_size_scale_steps]，按面积降序。
 static func recommended_window_sizes() -> Array[Vector2i]:
-	var cfg: GDFrameConfig = _frame_config()
+	var cfg: GDFrameDisplayConfig = _frame_config()
 	var screen: int = reference_screen()
 	var usable: Vector2i = usable_size_for_screen(screen)
 	var aspect: float = window_size_aspect(screen)
@@ -290,9 +271,9 @@ static func recommended_window_sizes() -> Array[Vector2i]:
 	return out
 
 
-## 设置界面可选分辨率：推荐列表再并入 [member GDFrameConfig.common_window_heights] 与设计分辨率。不超过可用区域。可用区放得下 [member GDFrameConfig.min_window_size] 时更小的不列入；放不下时仍按缩放档列出。
+## 设置界面可选分辨率：推荐列表再并入 [member GDFrameDisplayConfig.common_window_heights] 与设计分辨率。不超过可用区域。可用区放得下 [member GDFrameDisplayConfig.min_window_size] 时更小的不列入；放不下时仍按缩放档列出。
 static func window_size_options() -> Array[Vector2i]:
-	var cfg: GDFrameConfig = _frame_config()
+	var cfg: GDFrameDisplayConfig = _frame_config()
 	var screen: int = reference_screen()
 	var usable: Vector2i = usable_size_for_screen(screen)
 	var aspect: float = window_size_aspect(screen)
@@ -339,7 +320,7 @@ static func _scaled_fitted_size(fitted: Vector2i, scale: float) -> Vector2i:
 	)
 
 
-## 可用区最大适配尺寸达到 [member GDFrameConfig.min_window_size] 时，列表与存档才执行下限。
+## 可用区最大适配尺寸达到 [member GDFrameDisplayConfig.min_window_size] 时，列表与存档才执行下限。
 static func _min_window_floor_active(max_fitted: Vector2i) -> bool:
 	var min_size: Vector2i = _frame_config().min_window_size
 	return max_fitted.x >= min_size.x and max_fitted.y >= min_size.y
@@ -404,7 +385,7 @@ func preview_vsync(enabled: bool) -> void:
 	_apply_vsync(enabled)
 
 
-## 帧率上限可选项，见 [member GDFrameConfig.max_fps_options]。
+## 帧率上限可选项，见 [member GDFrameDisplayConfig.max_fps_options]。
 static func max_fps_options() -> Array[int]:
 	return _frame_config().max_fps_options
 
@@ -484,12 +465,11 @@ func preview_locale(locale_code: String) -> void:
 # =============================================================================
 
 func _notify_locale() -> void:
-	if locale_changed_hook.is_valid():
-		locale_changed_hook.call()
+	locale_changed.emit(TranslationServer.get_locale())
 
 
 func _settings() -> GDFrameSettingsData:
-	return _save.get_profile().settings
+	return data
 
 
 func _window_size_from_settings(s: GDFrameSettingsData) -> Vector2i:
@@ -662,3 +642,17 @@ func _normalize_explicit_locale(locale_code: String) -> String:
 
 static func _project_fallback_locale() -> String:
 	return String(ProjectSettings.get_setting("internationalization/locale/fallback"))
+
+func capture_state() -> Dictionary:
+	var snapshot := {}
+	for key in default_settings():
+		snapshot[key] = data.get(key)
+	return snapshot
+
+
+func restore_state(snapshot: Dictionary) -> void:
+	var defaults := default_settings()
+	for key in defaults:
+		var value: Variant = snapshot.get(key, defaults[key])
+		data.set(key, value if typeof(value) == typeof(defaults[key]) else defaults[key])
+	apply_from_profile(false)

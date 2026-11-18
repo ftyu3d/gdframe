@@ -321,4 +321,3 @@ static func _walk(node: Node, visitor: Callable) -> bool:
 		if _walk(child, visitor):
 			return true
 	return false
-

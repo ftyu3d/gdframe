@@ -1,6 +1,6 @@
 ## UI 管理器：缓存、图层、打开/关闭栈（由 [code]GDFrame[/code] 转发调用）。
 class_name GDFrameUIManager
-extends RefCounted
+extends Node
 
 # =============================================================================
 # Constants
@@ -38,6 +38,47 @@ var _nav_vp: Viewport = null
 # Setup
 # =============================================================================
 
+var _input_tracker: GDFrameInputDeviceTracker
+
+
+func _ready() -> void:
+	var host := get_parent() as GDFrameRoot
+	_input_tracker = host.input
+	host.input.device_changed.connect(_refresh_focus)
+	host.settings.locale_changed.connect(func(_locale: String): notify_locale())
+
+
+func _refresh_focus(_kind: int, _id: int, _emulated: bool) -> void:
+	var active := get_active_ui()
+	if active == null:
+		return
+	active.ui_nav_sync_item_focus_modes()
+	if not _input_tracker.should_allow_nav_focus():
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null and active.is_ancestor_of(focused) and GDFrameUINav.is_text_input(focused):
+		return
+	var target := active.ui_nav_current_item(active.ui_nav_get_items(), focused)
+	if target == null:
+		target = GDFrameUINav.resolve_focus_target(active, null, null)
+	if target != null:
+		active.ui_nav_apply_focus(target)
+
+
+func _input(event: InputEvent) -> void:
+	if not event.is_pressed() or event.is_echo():
+		return
+	if process_cancel_input(event):
+		get_viewport().set_input_as_handled()
+		return
+	var active := get_active_ui()
+	if active == null or not _input_tracker.should_allow_nav_focus():
+		return
+	var action := GDFrameUINav.nav_pressed_action(event)
+	if action != GDFrameUINav.NavPress.NONE and process_nav_action(action, active):
+		get_viewport().set_input_as_handled()
+
+
 func setup(root_node: Node, layer_slot_count: int) -> void:
 	if _root != null:
 		return
@@ -62,8 +103,14 @@ func setup(root_node: Node, layer_slot_count: int) -> void:
 	_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_dim.process_mode = Node.PROCESS_MODE_ALWAYS
 	_dim.visible = false
+	_root.add_child(_dim)
 
-func register_scanned_paths(scene_paths: Array[String]) -> void:
+
+func register_scene(id: StringName, scene: PackedScene) -> void:
+	_scene_registry[id] = {"scene": scene}
+
+
+func register_paths(scene_paths: Array[String]) -> void:
 	for full_path: String in scene_paths:
 		var ui_id: StringName = StringName(full_path.get_file().get_basename())
 		_scene_registry[ui_id] = {"path": full_path}
@@ -76,16 +123,16 @@ func preload_ui(ui_id: StringName) -> void:
 	if not _scene_registry.has(ui_id):
 		push_error("GDFrame UI: 未注册 %s" % ui_id)
 		return
+	if _root == null:
+		setup(self, (get_parent() as GDFrameRoot).ui_layers)
 	var ui: GDFrameUIBase = _mount_hidden(ui_id)
 	if ui == null:
 		push_error("GDFrame UI: preload 失败（无法创建实例）%s" % ui_id)
 		return
-	if ui.has_meta(INITED_META):
-		return
-	while ui.has_meta(PREPARING_META):
-		if not is_instance_valid(ui):
-			return
+	while is_instance_valid(ui) and ui.has_meta(PREPARING_META):
 		await _root.get_tree().process_frame
+	if not is_instance_valid(ui) or ui.has_meta(INITED_META):
+		return
 	ui.set_meta(PREPARING_META, true)
 	await ui._on_init()
 	if not is_instance_valid(ui):
@@ -429,15 +476,8 @@ func _hide_dim() -> void:
 
 
 func _instantiate_dim() -> Control:
-	var path: String = GDFrameConfig.DIM_SCENE_PATH
-	var msg_missing: String = "GDFrame UI: 缺少遮罩场景 %s（请重载 GDFrame 插件）。" % path
-	assert(ResourceLoader.exists(path), msg_missing)
-	var scene: PackedScene = load(path) as PackedScene
-	var msg_load: String = "GDFrame UI: 无法加载遮罩场景 %s" % path
-	assert(scene != null, msg_load)
-	var dim: Control = scene.instantiate() as Control
-	var msg_root: String = "GDFrame UI: 遮罩场景根节点须为 Control — %s" % path
-	assert(dim != null, msg_root)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.5)
 	return dim
 
 
@@ -445,15 +485,11 @@ func _notify_dim_visible(p_visible: bool, ui: Control) -> void:
 	var ui_id: StringName = &""
 	if ui is GDFrameUIBase:
 		ui_id = _nav_ui_id(ui as GDFrameUIBase)
-	# dim 场景根脚本契约：on_dim_show / on_dim_hide（见 gdframe_project/dim.gd）。
-	if p_visible:
+	if p_visible and _dim.has_method(&"on_dim_show"):
 		_dim.call(&"on_dim_show", ui_id)
-	else:
+	elif not p_visible and _dim.has_method(&"on_dim_hide"):
 		_dim.call(&"on_dim_hide")
 
-# =============================================================================
-# Navigation — focus restore
-# =============================================================================
 
 func _nav_viewport() -> Viewport:
 	if _nav_vp != null and is_instance_valid(_nav_vp):

@@ -1,185 +1,85 @@
-## GDFrame 全局入口（Autoload 名仍为 [code]GDFrame[/code]）。
-## 类型注解用 [code]GDFrameRoot[/code]；业务调用用 [code]GDFrame.ui[/code]、[code]GDFrame.audio[/code] 等服务。
-## 勿直接改本插件内部实现类。
 class_name GDFrameRoot
-extends "res://gdframe_project/ext.gd"
+extends Node
+## 将所需扩展的 module.tres 拖入此数组，顺序即初始化顺序。
+@export var modules: Array[GDFrameModule] = []
+@export_range(1, 64) var ui_layers := 3
+@export var keyboard_nav_focus := true
 
-# =============================================================================
-# Preloads
-# =============================================================================
-
-const UIManager: Script = preload("res://addons/gdframe/runtime/ui/ui_manager.gd")
-const UISceneScan: Script = preload("res://addons/gdframe/runtime/ui/ui_scene_scan.gd")
-const SaveManager: Script = preload("res://addons/gdframe/runtime/save/save_manager.gd")
-const SettingsManager: Script = preload("res://addons/gdframe/runtime/settings/settings_manager.gd")
-const InputDeviceTracker: Script = preload("res://addons/gdframe/runtime/input/input_device_tracker.gd")
-const PauseManager: Script = preload("res://addons/gdframe/runtime/pause/pause_manager.gd")
-
-# =============================================================================
-# State — subsystems
-# =============================================================================
+## 所有服务完成注册后发出，用于连接可选的兄弟服务。
+signal services_ready
 
 var ui: GDFrameUIManager
 var input: GDFrameInputDeviceTracker
-var save: GDFrameSaveManager
 var settings: GDFrameSettingsManager
-var audio: GDFrameAudioChannels
-var pause: GDFramePauseManager
+var save := GDFrameSaveManager.new()
 
-# =============================================================================
-# State — runtime
-# =============================================================================
+var audio: GDFrameAudioApi = GDFrameAudioApi.new()
+var pool: GDFramePoolApi = GDFramePoolApi.new()
+var fsm: GDFrameFSMApi = GDFrameFSMApi.new()
+var _services: Dictionary[StringName, Object] = {}
 
-var _locale_broadcast_marker: String = ""
-var _config: GDFrameConfig
 
-# =============================================================================
-# Lifecycle
-# =============================================================================
+func has_service(id: StringName) -> bool:
+	return _services.has(id)
 
-## 启动时初始化：配置、档案、设置、音频、UI 层；UI 场景目录见 [member GDFrameConfig.UI_ROOT_DIR]。
+
+func service_ids() -> Array[StringName]:
+	return _services.keys()
+
+
+func get_service(id: StringName) -> Object:
+	return _services.get(id)
+
+
 func _ready() -> void:
-	_config = load(GDFrameConfig.PATH) as GDFrameConfig
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	save = SaveManager.new()
-	save.setup()
-	if save.startup_profile_fallback():
-		signal_gdframe_profile_startup_fallback.emit()
-	settings = SettingsManager.new(save)
-	audio = GDFrameAudioChannels.new(save)
-	audio.setup(
-		self,
-		_config.audio_bgm_crossfade_sec,
-		_config.audio_bgm_fade_out_sec,
-		_config.audio_sfx_max_per_bus,
-		_config.audio_sfx_max_per_key,
-		_config.audio_sfx_pool_size,
-		_config.audio_sfx_spatial_pool_size,
-		_config.audio_sfx_log_drops,
-		_config.audio_ui_polyphony,
-	)
-	audio.bgm_changed_listener = func(stream: AudioStream) -> void:
-		signal_gdframe_bgm_changed.emit(stream)
-	audio.paused_listener = func(paused: bool) -> void:
-		signal_gdframe_audio_paused.emit(paused)
-	save.profile_saved_hook = func(err: StringName) -> void:
-		signal_gdframe_profile_saved.emit(err)
-	settings.audio_apply_hook = Callable(audio, &"apply_from_profile")
-	settings.locale_changed_hook = Callable(self, &"_locale_broadcast_if_changed")
-	pause = PauseManager.new()
-	pause.setup(self, Callable(self, &"_apply_pause"))
-	_ext_bootstrap()
-	call_deferred("_apply_settings_from_profile_deferred")
-	_locale_broadcast_marker = TranslationServer.get_locale()
-	ui = UIManager.new()
-	ui.setup(self, _config.ui_max_layer + 1)
-	ui.register_scanned_paths(UISceneScan.collect_ui_scene_paths(GDFrameConfig.UI_ROOT_DIR))
-	input = InputDeviceTracker.new()
-	input.setup(self, _config.keyboard_nav_focus)
-	signal_gdframe_input_device_changed.connect(_on_input_device_changed)
-	audio.apply_from_profile()
-
-
-func _apply_settings_from_profile_deferred() -> void:
-	settings.apply_from_profile(false)
-	_locale_broadcast_if_changed()
-
-
-func _input(event: InputEvent) -> void:
-	settings.apply_pending_web_fullscreen(event)
-	input.process_event(event)
-	if not event.is_pressed() or event.is_echo():
-		return
-	var is_key: bool = event is InputEventKey
-	var is_joy_btn: bool = event is InputEventJoypadButton
-	var is_joy_motion: bool = event is InputEventJoypadMotion
-	if not is_key and not is_joy_btn and not is_joy_motion:
-		return
-	if (is_key or is_joy_btn) and ui.process_cancel_input(event):
-		get_viewport().set_input_as_handled()
-		return
-	var active: GDFrameUIBase = ui.get_active_ui()
-	if active == null:
-		return
-	var nav_action: int = GDFrameUINav.nav_pressed_action(event)
-	if nav_action == GDFrameUINav.NavPress.NONE:
-		return
-	if not input.should_allow_nav_focus():
-		return
-	if ui.process_nav_action(nav_action, active):
-		get_viewport().set_input_as_handled()
-		return
-	# 竖排页不吃左右键时，避免 Godot 默认邻居导航抢走焦点。
-	if nav_action != GDFrameUINav.NavPress.ACCEPT and active.ui_nav_has_items():
-		get_viewport().set_input_as_handled()
-
-
-# =============================================================================
-# Internal
-# =============================================================================
-
-## 语言变更时广播 [code]signal_gdframe_locale_changed[/code] 并通知可见 UI。
-func _locale_broadcast_if_changed() -> void:
-	var cur: String = TranslationServer.get_locale()
-	if cur == _locale_broadcast_marker:
-		return
-	_locale_broadcast_marker = cur
-	signal_gdframe_locale_changed.emit(cur)
-	ui.notify_locale()
-
-
-## 切换设备时更新光标，并按当前设备决定是否给导航项聚焦。
-func _on_input_device_changed(
-	device_kind: GDFrameInputEventDevice.DeviceKind,
-	_device_id: int,
-	_is_emulated: bool,
-) -> void:
-	_apply_input_cursor(device_kind)
-	_refresh_active_ui_nav_focus()
-
-
-func _apply_input_cursor(device_kind: GDFrameInputEventDevice.DeviceKind) -> void:
-	if input.should_hide_cursor(device_kind):
-		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
-	else:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-
-
-func _refresh_active_ui_nav_focus() -> void:
-	var active: GDFrameUIBase = ui.get_active_ui()
-	if active == null:
-		return
-	active.ui_nav_sync_item_focus_modes()
-	if not input.should_allow_nav_focus():
-		return
-	var items: Array[Control] = active.ui_nav_get_items()
-	if items.is_empty():
-		return
-	var owner: Control = get_viewport().gui_get_focus_owner() as Control
-	if owner != null and GDFrameUINav.is_text_input(owner) and active.is_ancestor_of(owner):
-		return
-	var current: Control = active.ui_nav_current_item(items, owner)
-	if current != null:
-		active.ui_nav_apply_focus(current)
-		return
-	var target: Control = GDFrameUINav.resolve_focus_target(active, null, null)
-	if target != null:
-		active.ui_nav_apply_focus(target)
-
-
-func _ext_bootstrap() -> void:
-	GDFrameExtBootstrap.setup(self, save.get_profile())
-
-
-func _apply_pause(paused: bool) -> void:
-	get_tree().paused = paused
-	audio.set_paused(paused)
-
-
-# =============================================================================
-# Ext — 扩展服务槽位（module.gd register 写入；业务优先用已生成槽位字段）
-# =============================================================================
-
-## 注册扩展服务并写入生成的强类型槽位（如 [code]example[/code]）。
-func ext_register(key: StringName, service: Variant) -> void:
-	_bind_ext_service(key, service)
+	ui = GDFrameUIManager.new()
+	input = GDFrameInputDeviceTracker.new()
+	input.keyboard_nav_focus = keyboard_nav_focus
+	settings = GDFrameSettingsManager.new()
+	_services = {&"ui": ui, &"input": input, &"settings": settings, &"save": save}
+	ui.name = "UI"
+	settings.name = "Settings"
+	input.name = "Input"
+	add_child(ui)
+	add_child(settings)
+	add_child(input)
+	save.setup(self)
+	for descriptor in modules:
+		if descriptor == null or descriptor.entry == null:
+			push_error("GDFrame: Modules 中存在空模块或缺少入口脚本。")
+			continue
+		var module := descriptor.entry
+		if not module.has_method(&"create_service"):
+			push_error("GDFrame: modules 中每个脚本都须实现 static func create_service(host)。")
+			continue
+		var id := StringName(module.resource_path.get_base_dir().get_file().trim_prefix("gdframe_"))
+		if has_service(id):
+			push_error("GDFrame: 重复模块 %s" % id)
+			continue
+		var service: Object = module.call(&"create_service", self)
+		if service == null:
+			push_error("GDFrame: %s 初始化失败" % id)
+			continue
+		match id:
+			&"audio":
+				if not service is GDFrameAudioApi:
+					push_error("GDFrame: audio 须继承 GDFrameAudioApi")
+					continue
+				audio = service
+			&"pool":
+				if not service is GDFramePoolApi:
+					push_error("GDFrame: pool 须继承 GDFramePoolApi")
+					continue
+				pool = service
+			&"fsm":
+				if not service is GDFrameFSMApi:
+					push_error("GDFrame: fsm 须继承 GDFrameFSMApi")
+					continue
+				fsm = service
+		_services[id] = service
+		if service is Node:
+			service.name = id
+			add_child(service)
+	save.restore_services()
+	services_ready.emit()
