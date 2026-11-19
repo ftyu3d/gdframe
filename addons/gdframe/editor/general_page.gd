@@ -2,14 +2,17 @@
 extends VBoxContainer
 
 const Locale = preload("locale_scaffold.gd")
+const LocaleWindow = preload("locale_window.gd")
 const Ide = preload("ide_launcher.gd")
 const State = preload("editor_state.gd")
+
 var _context: RefCounted
 var _layers: SpinBox
 var _keyboard: CheckBox
 var _ide: OptionButton
 var _open_project_button: Button
 var _open_repository_button: Button
+var _locale_window: Window
 
 
 func _init(context: RefCounted) -> void:
@@ -34,10 +37,9 @@ func _ready() -> void:
 	add_child(scripts)
 	_context.button(scripts, "打开项目脚本 / 信号声明", _open_root_script)
 	_context.button(scripts, "打开结果常量", _context.open_script.bind("res://addons/gdframe/runtime/save/save_result.gd"))
-	_context.button(scripts, "创建 / 打开遮罩", _open_dim)
 	var locale := HBoxContainer.new()
 	add_child(locale)
-	_context.button(locale, "初始化本地化 CSV", _locale)
+	_context.button(locale, "本地化管理…", _open_localization)
 	_context.button(locale, "定位本地化 CSV", _context.locate.bind(Locale.LOCALE_CSV_PATH))
 	var saves := HBoxContainer.new()
 	add_child(saves)
@@ -64,6 +66,7 @@ func _ready() -> void:
 			if child is Button and not child is CheckBox and not child is OptionButton:
 				child.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	State.settings().settings_changed.connect(_sync_ide, CONNECT_DEFERRED)
+	Ide.restore_project_preference()
 	_sync_ide()
 	refresh()
 
@@ -98,32 +101,17 @@ func _open_root_script() -> void:
 	_context.open_script(script.resource_path)
 
 
-func _open_dim() -> void:
-	var root := _context.root() as Node
-	if root == null:
+func _open_localization() -> void:
+	if is_instance_valid(_locale_window) and not _locale_window.is_queued_for_deletion():
+		_locale_window.grab_focus()
 		return
-	var scene := root.get("dim_scene") as PackedScene
-	if scene == null:
-		var path := "res://gdframe_project/ui/dim/dim.tscn"
-		if not FileAccess.file_exists(path):
-			if not _context.write_file(path, '[gd_scene format=3]\n\n[node name="Dim" type="ColorRect"]\nanchors_preset = 15\nanchor_right = 1.0\nanchor_bottom = 1.0\ngrow_horizontal = 2\ngrow_vertical = 2\ncolor = Color(0, 0, 0, 0.5)\n'):
-				return
-		scene = load(path)
-		_context.set_property(&"dim_scene", scene)
-		_context.scan()
-	EditorInterface.open_scene_from_path(scene.resource_path)
-
-
-func _locale() -> void:
-	var scaffold := Locale.new()
-	var result: Dictionary = scaffold.prepare_csv()
-	if not result.get("ok", false):
-		_context.report("本地化初始化失败：%s" % result)
-		return
-	_context.scan()
-	await EditorInterface.get_resource_filesystem().filesystem_changed
-	scaffold.register_translations()
-	_context.report("本地化 CSV 已初始化并注册。")
+	var manager := LocaleWindow.new(_context)
+	_locale_window = manager
+	manager.saved.connect(func():
+		_context.report("本地化 CSV 已保存并同步。")
+	)
+	add_child(manager)
+	manager.popup_centered_ratio(0.8)
 
 
 func _open_saves() -> void:

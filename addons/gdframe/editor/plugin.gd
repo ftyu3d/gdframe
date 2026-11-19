@@ -1,7 +1,7 @@
 @tool
 extends EditorPlugin
 
-const COMPOSITION := "res://gdframe.tscn"
+const COMPOSITION := "res://gdframe_project/gdframe.tscn"
 const TEMPLATE := """[gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://addons/gdframe/runtime/base.tscn" id="base"]
@@ -10,13 +10,18 @@ const TEMPLATE := """[gd_scene format=3]
 """
 const ExportFilter = preload("export_filter.gd")
 const Dock = preload("dock.gd")
-var _filter := ExportFilter.new()
+var _filter := ExportFilter.new(COMPOSITION)
 var _dock: HBoxContainer
 
 
 func _enter_tree() -> void:
 	add_export_plugin(_filter)
 	if not FileAccess.file_exists(COMPOSITION):
+		var folder := COMPOSITION.get_base_dir()
+		var error := DirAccess.make_dir_recursive_absolute(folder)
+		if error != OK:
+			push_error("GDFrame: 无法创建 %s (%s)" % [folder, error_string(error)])
+			return
 		var file := FileAccess.open(COMPOSITION, FileAccess.WRITE)
 		if file == null:
 			push_error("GDFrame: 无法创建 %s" % COMPOSITION)
@@ -36,6 +41,8 @@ func _enable_plugin() -> void:
 
 
 func _register_autoload(update_editor: bool) -> void:
+	if not FileAccess.file_exists(COMPOSITION):
+		return
 	var path: String = ProjectSettings.get_setting("autoload/GDFrame", "")
 	if path.is_empty():
 		if update_editor:

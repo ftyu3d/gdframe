@@ -188,15 +188,24 @@ func _online_row(id: String, supported: Dictionary, installed: bool) -> void:
 	_online_rows.add_child(panel)
 	var row := HBoxContainer.new()
 	panel.add_child(row)
-	var title := _context.label(row, id) as Label
+	var entries := Versions.sorted_supported_entries(supported)
+	var display_name := id
+	for index in range(entries.size() - 1, -1, -1):
+		var name_text := str(entries[index].get("name", "")).strip_edges()
+		if not name_text.is_empty():
+			display_name = name_text
+			break
+	var title := _context.label(row, display_name) as Label
+	title.tooltip_text = id
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var current := "未安装"
 	if installed:
 		var descriptor := load("res://addons/gdframe_%s/module.tres" % id) as GDFrameModule
-		current = "当前 %s" % str(descriptor.get_meta("version", ""))
+		var version := str(descriptor.get_meta("version", "")) if descriptor != null else ""
+		current = "已安装" if version.is_empty() else "当前 %s" % version
 	_context.label(row, current)
 	var versions := OptionButton.new()
-	for entry in Versions.sorted_supported_entries(supported):
+	for entry in entries:
 		versions.add_item(str(entry.version))
 		versions.set_item_metadata(versions.item_count - 1, entry)
 	row.add_child(versions)
@@ -204,5 +213,5 @@ func _online_row(id: String, supported: Dictionary, installed: bool) -> void:
 		if _busy or versions.selected < 0 or EditorInterface.is_playing_scene():
 			return
 		var entry: Dictionary = versions.get_item_metadata(versions.selected)
-		_context.confirm(self, "安装扩展", "安装 %s %s？" % [id, entry.version], _install.bind(entry))
+		_context.confirm(self, "安装扩展", "安装 %s %s？" % [display_name, entry.version], _install.bind(entry))
 	)

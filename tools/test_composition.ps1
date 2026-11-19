@@ -32,12 +32,14 @@ function Select-Modules([string[]]$ids) {
         $resources += '[ext_resource type="Resource" path="res://addons/gdframe_{0}/module.tres" id="{0}"]' -f $id
         $refs += 'ExtResource("{0}")' -f $id
     }
-    Write-Project "gdframe.tscn" (@(
+    Write-Project "gdframe_project/gdframe.tscn" (@(
         '[gd_scene format=3]', '',
         '[ext_resource type="PackedScene" path="res://addons/gdframe/runtime/base.tscn" id="root"]',
-        '[ext_resource type="Script" path="res://addons/gdframe/runtime/module.gd" id="module"]'
+        '[ext_resource type="Script" path="res://addons/gdframe/runtime/module.gd" id="module"]',
+        '[ext_resource type="PackedScene" path="res://gdframe_project/dim.tscn" id="dim"]'
     ) + $resources + @('', '[node name="GDFrame" instance=ExtResource("root")]',
-        ('modules = Array[ExtResource("module")]([{0}])' -f ($refs -join ', '))) -join "`n")
+        ('modules = Array[ExtResource("module")]([{0}])' -f ($refs -join ', ')),
+        'dim_scene = ExtResource("dim")') -join "`n")
 }
 Copy-Item -LiteralPath $core -Destination "$project/addons/gdframe" -Recurse
 Write-Project "project.godot" @'
@@ -87,9 +89,29 @@ func _ready() -> void:
 	if host.ui.get_child_count() != 0:
 		get_tree().quit(8)
 		return
+	var dim: Control = host.ui.get_dim()
+	if dim == null or dim.visible:
+		get_tree().quit(9)
+		return
 	host.ui.register_scene(&"panel", panel)
+	host.ui.register_scene(&"higher", panel)
 	await host.ui.preload_ui(&"panel")
-	if host.ui.open(&"panel") == null or not host.ui.close(&"panel"):
+	await host.ui.preload_ui(&"higher")
+	var higher: Control = host.ui.open(&"higher", null, 1)
+	var lower: Control = host.ui.open(&"panel", null, 0)
+	if higher == null or lower == null or not dim.visible or dim != host.ui.get_dim() or dim.get_parent() != higher.get_parent() or dim.get_index() + 1 != higher.get_index():
+		get_tree().quit(9)
+		return
+	if host.dim_scene != null and (dim.get("effect") != &"higher" or not dim.get("was_hidden")):
+		get_tree().quit(9)
+		return
+	if not host.ui.close(&"higher") or not dim.visible or dim.get_parent() != lower.get_parent() or dim.get_index() + 1 != lower.get_index():
+		get_tree().quit(9)
+		return
+	if host.dim_scene != null and dim.get("effect") != &"panel":
+		get_tree().quit(9)
+		return
+	if not host.ui.close(&"panel") or dim.visible or (host.dim_scene != null and dim.get("effect") != &""):
 		get_tree().quit(9)
 		return
 	var button := InputEventJoypadButton.new()
@@ -164,6 +186,22 @@ $previousAppData = $env:APPDATA
 try {
     $env:APPDATA = Join-Path $work "userdata"
     $null = Invoke-Godot $project @("--import")
+    Write-Project "gdframe_project/dim.tscn" @'
+[gd_scene format=3]
+[ext_resource type="Script" path="res://gdframe_project/dim.gd" id="1"]
+[node name="Dim" type="Control"]
+script = ExtResource("1")
+'@
+    Write-Project "gdframe_project/dim.gd" @'
+extends Control
+var effect: StringName
+var was_hidden := false
+func on_dim_show(ui_id: StringName) -> void:
+    effect = ui_id
+    was_hidden = not visible
+func on_dim_hide() -> void:
+    effect = &""
+'@
     # Exercise the public autoload name after the plugin has registered it.
     $entry = [IO.File]::ReadAllText("$project/main.gd").Replace('get_node("/root/GDFrame") as GDFrameRoot', 'GDFrame')
     Write-Project "main.gd" $entry

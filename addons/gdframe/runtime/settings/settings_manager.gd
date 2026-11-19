@@ -22,6 +22,10 @@ const _VALID_DISPLAY_MODES: PackedStringArray = [
 
 ## [code]0[/code] 表示不限制帧率（[member Engine.max_fps]）。可选项见 [member GDFrameDisplayConfig.max_fps_options]。
 const MAX_FPS_UNLIMITED: int = 0
+const PROJECT_FPS_PRESETS := "gdframe/settings/max_fps_options"
+const PROJECT_VSYNC := "display/window/vsync/vsync_mode"
+const PROJECT_WINDOW_WIDTH := "display/window/size/window_width_override"
+const PROJECT_WINDOW_HEIGHT := "display/window/size/window_height_override"
 
 # =============================================================================
 # State
@@ -60,8 +64,23 @@ static func window_size_aspect(screen: int = -1) -> float:
 	return float(maxi(full.x, 1)) / float(maxi(full.y, 1))
 
 
-## 默认窗口化分辨率：取 [method recommended_window_sizes] 第二档（下标 [code]1[/code]；不足一档则取首项）。
+## 默认窗口化分辨率优先使用 Godot 项目的窗口尺寸覆盖，未填写的尺寸使用推荐值。
 static func default_window_size() -> Vector2i:
+	var size := _recommended_default_window_size()
+	var width := int(ProjectSettings.get_setting_with_override(PROJECT_WINDOW_WIDTH))
+	var height := int(ProjectSettings.get_setting_with_override(PROJECT_WINDOW_HEIGHT))
+	if width > 0:
+		size.x = width
+	if height > 0:
+		size.y = height
+	if width > 0 or height > 0:
+		var usable := usable_size_for_screen()
+		if usable.x > 0 and usable.y > 0:
+			return _guard_windowed_client_size(Vector2i(mini(size.x, usable.x), mini(size.y, usable.y)))
+	return size
+
+
+static func _recommended_default_window_size() -> Vector2i:
 	var options: Array[Vector2i] = recommended_window_sizes()
 	if options.is_empty():
 		var screen: int = reference_screen()
@@ -107,7 +126,7 @@ static func default_settings() -> Dictionary[String, Variant]:
 		"display_mode": _default_display_mode(),
 		"window_width": size.x,
 		"window_height": size.y,
-		"vsync_enabled": true,
+		"vsync_enabled": int(ProjectSettings.get_setting_with_override(PROJECT_VSYNC)) != DisplayServer.VSYNC_DISABLED,
 		"max_fps": MAX_FPS_UNLIMITED,
 		"locale": LOCALE_AUTOMATIC,
 	}
@@ -162,7 +181,16 @@ func apply() -> void:
 
 
 func default_snapshot() -> Dictionary:
-	return default_settings()
+	var defaults := default_settings()
+	var host := get_parent() as GDFrameRoot
+	if host != null:
+		var configured: Variant = host.profile_defaults.get("settings", {})
+		if configured is Dictionary:
+			for key in defaults:
+				var value: Variant = configured.get(key)
+				if typeof(value) == typeof(defaults[key]):
+					defaults[key] = value
+	return defaults
 
 
 # =============================================================================
@@ -281,6 +309,7 @@ static func window_size_options() -> Array[Vector2i]:
 	var out: Array[Vector2i] = recommended_window_sizes()
 	for size: Vector2i in out:
 		seen["%d,%d" % [size.x, size.y]] = true
+	_add_unique_size(out, seen, default_window_size(), false)
 	var enforce_min: bool = _min_window_floor_active(_fit_size_to_aspect(usable, aspect))
 
 	for height: int in cfg.common_window_heights:
@@ -385,9 +414,23 @@ func preview_vsync(enabled: bool) -> void:
 	_apply_vsync(enabled)
 
 
-## 帧率上限可选项，见 [member GDFrameDisplayConfig.max_fps_options]。
+## 帧率上限可选项。0 始终可用，表示不限制。
 static func max_fps_options() -> Array[int]:
-	return _frame_config().max_fps_options
+	return _normalize_fps_presets(ProjectSettings.get_setting(PROJECT_FPS_PRESETS, _frame_config().max_fps_options))
+
+
+static func default_max_fps_options() -> Array[int]:
+	return _normalize_fps_presets(_frame_config().max_fps_options)
+
+
+static func _normalize_fps_presets(configured: Variant) -> Array[int]:
+	var options: Array[int] = [MAX_FPS_UNLIMITED]
+	if configured is Array or configured is PackedInt32Array:
+		for fps: Variant in configured:
+			if fps is int and fps > 0 and not options.has(fps):
+				options.append(fps)
+	options.sort()
+	return options
 
 
 func get_max_fps() -> int:
@@ -556,9 +599,11 @@ func _center_window(window_size: Vector2i) -> void:
 
 
 func _apply_vsync(enabled: bool) -> void:
-	DisplayServer.window_set_vsync_mode(
-		DisplayServer.VSYNC_ENABLED if enabled else DisplayServer.VSYNC_DISABLED
-	)
+	var project_mode := int(ProjectSettings.get_setting_with_override(PROJECT_VSYNC))
+	var mode := DisplayServer.VSYNC_DISABLED
+	if enabled:
+		mode = clampi(project_mode, DisplayServer.VSYNC_ENABLED, DisplayServer.VSYNC_MAILBOX) as DisplayServer.VSyncMode
+	DisplayServer.window_set_vsync_mode(mode)
 
 
 func _apply_max_fps(value: int) -> void:
@@ -566,7 +611,7 @@ func _apply_max_fps(value: int) -> void:
 
 
 static func _normalize_max_fps(value: int) -> int:
-	return value if _frame_config().max_fps_options.has(value) else MAX_FPS_UNLIMITED
+	return value if max_fps_options().has(value) else MAX_FPS_UNLIMITED
 
 
 func _apply_locale(locale_setting: String) -> void:
@@ -613,24 +658,29 @@ static func _guard_windowed_client_size(size: Vector2i, screen: int = -1) -> Vec
 
 
 func _resolve_automatic_locale() -> String:
-	var locales: PackedStringArray = project_locales()
-	var os_locale: String = OS.get_locale()
-	if os_locale in locales:
-		return os_locale
-	var lang: String = OS.get_locale_language()
-	if lang == "zh":
-		return "zh_CN"
-	for loc: String in locales:
-		if loc == lang or loc.begins_with(lang + "_"):
-			return loc
-	return _project_fallback_locale()
+	var locale := _match_locale(OS.get_locale(), project_locales())
+	return locale if not locale.is_empty() else _project_fallback_locale()
 
 
 func _normalize_stored_locale(locale_code: String) -> String:
 	var s: String = locale_code.strip_edges()
 	if s.is_empty() or s == LOCALE_AUTOMATIC:
 		return LOCALE_AUTOMATIC
-	return s if s in project_locales() else LOCALE_AUTOMATIC
+	var locale := _match_locale(s, project_locales(), 10)
+	return locale if not locale.is_empty() else LOCALE_AUTOMATIC
+
+
+static func _match_locale(requested: String, available: PackedStringArray, minimum_score := 1) -> String:
+	if requested in available:
+		return requested
+	var best := ""
+	var best_score := minimum_score - 1
+	for locale: String in available:
+		var score := TranslationServer.compare_locales(requested, locale)
+		if score > best_score:
+			best_score = score
+			best = locale
+	return best
 
 
 func _normalize_explicit_locale(locale_code: String) -> String:

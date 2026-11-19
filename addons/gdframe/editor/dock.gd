@@ -6,6 +6,7 @@ const Modules = preload("module_dock.gd")
 const General = preload("general_page.gd")
 const UIPage = preload("ui_page.gd")
 const Settings = preload("settings_page.gd")
+const LocaleDocument = preload("locale_document.gd")
 const Extensions = preload("extensions_page.gd")
 const Updates = preload("updates_page.gd")
 
@@ -14,7 +15,7 @@ var _pages: VBoxContainer
 var _sidebar: VBoxContainer
 var _group := ButtonGroup.new()
 var _modules: VBoxContainer
-var _general: Control
+var _general: General
 var _body: VBoxContainer
 var _extension_pages: Array[Control] = []
 var _extension_buttons: Array[Button] = []
@@ -44,21 +45,24 @@ func _ready() -> void:
 	_pages.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(_pages)
 	context.status = Label.new()
+	context.status.add_theme_color_override("font_color", Color(0.65, 0.68, 0.75))
 	context.status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_body.add_child(context.status)
 	_general = General.new(context)
 	_add_page("通用", _general)
 	_modules = Modules.new(context)
 	var extensions := Extensions.new(context, _modules)
-	_add_page("扩展管理", extensions)
 	_add_page("UI 管理", UIPage.new(context))
-	_add_page("设置项", Settings.new(context))
+	var settings := Settings.new(context)
+	_add_page("设置项", settings)
+	LocaleDocument.shared().saved.connect(settings.refresh)
+	_add_page("扩展管理", extensions)
 	_add_page("更新", Updates.new(context))
 	_general.minimum_size_changed.connect(_update_minimum_height, CONNECT_DEFERRED)
 	context.status.minimum_size_changed.connect(_update_minimum_height, CONNECT_DEFERRED)
 	(_sidebar.get_child(0) as Button).button_pressed = true
 	_show(_pages.get_child(0))
-	context.report("就绪。配置保存在项目根目录的 gdframe.tscn。")
+	context.report("就绪。配置保存在 %s。" % context.scene_path.trim_prefix("res://"))
 	_update_minimum_height()
 	visibility_changed.connect(refresh)
 	EditorInterface.get_resource_filesystem().filesystem_changed.connect(_rebuild_extension_pages)
@@ -71,13 +75,16 @@ func _update_minimum_height() -> void:
 	custom_minimum_size.y = general_height + status_height + _body.get_theme_constant("separation")
 
 
-func _add_page(title: String, page: Control) -> Button:
+func _add_page(title: String, page: Control, index: int = -1) -> Button:
 	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	page.hide()
 	_pages.add_child(page)
 	var button := context.button(_sidebar, title, _show.bind(page)) as Button
 	button.toggle_mode = true
 	button.button_group = _group
+	if index >= 0:
+		_pages.move_child(page, index)
+		_sidebar.move_child(button, index)
 	return button
 
 
@@ -121,7 +128,8 @@ func _rebuild_extension_pages() -> void:
 		if page == null:
 			continue
 		_extension_pages.append(page)
-		var button := _add_page(str(page.name), page)
+		# Keep extension management and updates at the end of the sidebar.
+		var button := _add_page(str(page.name), page, _sidebar.get_child_count() - 2)
 		_extension_buttons.append(button)
 		if str(page.name) == active_title:
 			button.button_pressed = true

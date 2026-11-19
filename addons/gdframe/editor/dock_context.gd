@@ -13,7 +13,7 @@ func _init(owner: EditorPlugin, path: String) -> void:
 
 
 func report(message: String) -> void:
-	status.text = message.replace("\n", " ")
+	status.text = "状态: " + message.replace("\n", " ")
 	status.tooltip_text = message
 
 
@@ -41,6 +41,10 @@ func read_property(key: StringName, fallback: Variant = null) -> Variant:
 
 
 func set_property(key: StringName, value: Variant) -> bool:
+	return set_properties({key: value}, "GDFrame · %s" % key)
+
+
+func set_properties(values: Dictionary, action_name: String) -> bool:
 	if EditorInterface.is_playing_scene():
 		report("请先停止运行游戏。")
 		return false
@@ -49,9 +53,10 @@ func set_property(key: StringName, value: Variant) -> bool:
 		report("请等待配置场景打开后重试。")
 		return false
 	var undo := plugin.get_undo_redo()
-	undo.create_action("GDFrame · %s" % key, UndoRedo.MERGE_DISABLE, node)
-	undo.add_do_property(node, key, value)
-	undo.add_undo_property(node, key, node.get(key))
+	undo.create_action(action_name, UndoRedo.MERGE_DISABLE, node)
+	for key: StringName in values:
+		undo.add_do_property(node, key, values[key])
+		undo.add_undo_property(node, key, node.get(key))
 	undo.commit_action()
 	var error := EditorInterface.save_scene()
 	report("配置已保存。" if error == OK else "保存失败：%s" % error_string(error))

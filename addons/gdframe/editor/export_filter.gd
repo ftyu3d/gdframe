@@ -2,6 +2,11 @@
 extends EditorExportPlugin
 
 var _excluded: PackedStringArray = []
+var _composition_path: String
+
+
+func _init(composition_path: String) -> void:
+	_composition_path = composition_path
 
 
 func _get_name() -> String:
@@ -10,7 +15,7 @@ func _get_name() -> String:
 
 func _export_begin(_features: PackedStringArray, _debug: bool, _path: String, _flags: int) -> void:
 	_excluded.clear()
-	var scene := ResourceLoader.load("res://gdframe.tscn", "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
+	var scene := ResourceLoader.load(_composition_path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
 	if scene == null:
 		return
 	var state := scene.get_state()

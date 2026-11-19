@@ -17,6 +17,7 @@ const PREPARING_META: StringName = &"gdframe_ui_preparing"
 var _root: CanvasLayer = null
 var _layer_roots: Array[Control] = []
 var _dim: Control = null
+var _dim_owner: Control = null
 var _layer_count: int = 0
 var _scene_registry: Dictionary[StringName, Dictionary] = {}
 var _cache: Dictionary[StringName, Control] = {}
@@ -119,12 +120,18 @@ func register_paths(scene_paths: Array[String]) -> void:
 # Public API
 # =============================================================================
 
+## 获取共享遮罩，允许在预加载或打开 UI 前配置效果。
+func get_dim() -> Control:
+	if _root == null:
+		setup(self, (get_parent() as GDFrameRoot).ui_layers)
+	return _dim
+
+
 func preload_ui(ui_id: StringName) -> void:
 	if not _scene_registry.has(ui_id):
 		push_error("GDFrame UI: 未注册 %s" % ui_id)
 		return
-	if _root == null:
-		setup(self, (get_parent() as GDFrameRoot).ui_layers)
+	get_dim()
 	var ui: GDFrameUIBase = _mount_hidden(ui_id)
 	if ui == null:
 		push_error("GDFrame UI: preload 失败（无法创建实例）%s" % ui_id)
@@ -159,10 +166,9 @@ func open(ui_id: StringName, data: Variant = null, layer: int = -1) -> Control:
 		_set_visible(ui, true)
 	if use_dim:
 		_dim_push_stack(ui_id)
-		_place_dim_before_ui(ui)
 	else:
 		_dim_remove_stack(ui_id)
-		_restore_dim_from_stack()
+	_restore_dim_from_stack(ui if use_dim else null)
 	ui._on_show(data)
 	if not ui.ui_nav_participates:
 		return ui
@@ -400,10 +406,13 @@ func _load_scene(entry: Dictionary, ui_id: StringName = &"") -> PackedScene:
 	entry["scene"] = scene
 	return scene
 
-func _attach(ui: Control, ui_id: StringName, resolved_layer: int) -> void:
+func _attach(ui: Control, _ui_id: StringName, resolved_layer: int) -> void:
 	var parent: Control = _layer_roots[resolved_layer]
-	if ui.get_parent() != parent:
+	if ui.get_parent() == null:
 		parent.add_child(ui)
+	elif ui.get_parent() != parent:
+		ui.reparent(parent, false)
+	parent.move_child(ui, -1)
 
 func _set_visible(ui: Control, p_visible: bool) -> void:
 	if is_instance_valid(ui):
@@ -437,42 +446,44 @@ func _dim_remove_stack(ui_id: StringName) -> void:
 		_dim_stack.remove_at(idx)
 
 
-## 从 dim 栈顶向下，把 dim 挂到第一个仍可见的 owner 前；栈空则隐藏。
-
-func _restore_dim_from_stack() -> void:
-	for i: int in range(_dim_stack.size() - 1, -1, -1):
-		var ui_id: StringName = _dim_stack[i]
-		var ui: GDFrameUIBase = _cache.get(ui_id) as GDFrameUIBase
-		if ui != null and is_instance_valid(ui) and ui.visible:
-			_place_dim_before_ui(ui)
-			return
-	_hide_dim()
-
-
-## 将 dim 置于 [param ui] 正前方，并保持 [param ui] 为同级最末（见 [GDFrameUIBase]）。
-
-func _place_dim_before_ui(ui: Control) -> void:
-	if ui == null or not is_instance_valid(ui):
+## 遮罩始终位于最上层仍可见且请求遮罩的 UI 后。
+func _restore_dim_from_stack(reopened: Control = null) -> void:
+	var owner: Control = null
+	var owner_layer := -1
+	for ui_id in _dim_stack:
+		var ui := _get_cached_ui(ui_id)
+		if ui == null or not ui.visible or ui.get_parent() == null:
+			continue
+		var layer := _layer_roots.find(ui.get_parent())
+		if layer > owner_layer or (layer == owner_layer and owner != null and ui.get_index() > owner.get_index()):
+			owner = ui
+			owner_layer = layer
+	if owner == null:
 		_hide_dim()
 		return
-	var parent: Node = ui.get_parent()
-	if parent == null:
-		_hide_dim()
-		return
-	if _dim.get_parent() != null:
-		_dim.get_parent().remove_child(_dim)
-	parent.move_child(ui, -1)
-	parent.add_child(_dim)
-	parent.move_child(_dim, ui.get_index())
-	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_dim.set_offsets_preset(Control.PRESET_FULL_RECT)
-	_dim.visible = true
-	_notify_dim_visible(true, ui)
+	_place_dim_before_ui(owner, owner == reopened)
+
+
+func _place_dim_before_ui(ui: Control, refresh_effect: bool) -> void:
+	var parent := ui.get_parent()
+	if _dim.get_parent() != parent:
+		_dim.reparent(parent, false)
+		_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var index := ui.get_index()
+	if _dim.get_index() < index:
+		index -= 1
+	if _dim.get_index() != index:
+		parent.move_child(_dim, index)
+	if _dim_owner != ui or refresh_effect:
+		_dim_owner = ui
+		_notify_dim_visible(true, ui)
+	_dim.show()
 
 func _hide_dim() -> void:
 	if _dim.visible:
 		_notify_dim_visible(false, null)
-	_dim.visible = false
+	_dim_owner = null
+	_dim.hide()
 
 
 func _instantiate_dim() -> Control:

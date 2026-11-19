@@ -1,61 +1,46 @@
 <p align="center"><img src="docs/gdframe-logo.png" alt="GDFrame" width="720"></p>
 
-# GDFrame 1.0.0
+# GDFrame
 
-Godot 4.7+ 的 GDScript 游戏框架。启用插件后，Autoload `GDFrame` 提供 UI、键鼠与手柄导航、显示与语言设置，以及保存这些设置所需的玩家档案。UI 图层在第一次预加载界面时创建。
+面向 Godot 4.7+ 的 GDScript 游戏框架。启用插件即可获得菜单与弹窗管理、键鼠与手柄导航、显示与语言设置，以及玩家档案。用同一套基础能力做原型、开发正式项目，也可以按需加入音频、对象池等扩展。
 
-## 接入新项目
+## 从菜单原型到游戏发布
 
-1. 把 `addons/gdframe/` 复制到工程同名目录，在「项目 → 项目设置 → 插件」启用 GDFrame。
-2. 插件创建 `res://gdframe.tscn` 并注册 Autoload。将这个场景和 `project.godot` 提交到版本控制。空的 **Modules** 数组就是完整可用的基础配置。
-3. 需要扩展时，从 gdframe-ext 复制对应的 `addons/gdframe_<id>/`。在 Godot 底部打开 **GDFrame**，从「可用扩展」选择并点「启用」。Dock 会保存修改，已启用的扩展从上到下加载。删除扩展目录前，先在 Dock 停用它。[扩展清单与用法](https://github.com/ftyu3d/gdframe-ext)
+- **在 Godot 里完成配置。** 从底部 GDFrame Dock 创建界面、设置图层和遮罩、编辑档案默认值、维护翻译。界面仍然使用普通的 Godot 场景和脚本，团队可以直接在编辑器里调整。
+- **在合适的时机准备界面。** 可在加载画面中预加载菜单或弹窗，打开时同步显示。UI 图层按需创建，已预加载的界面实例可以复用，多层弹窗共用一个遮罩。
+- **运行时按项目需要加载。** 项目配置场景列出启用的扩展，游戏启动时按清单初始化。保持插件启用进行导出，即使选择「导出所有资源」，GDFrame 也会排除未启用的 GDFrame 模块和编辑器工具。
+- **项目依赖一眼可查。** 通过 `GDFrame.ui`、`GDFrame.settings` 等入口调用基础能力。扩展依赖集中在配置场景，业务代码可使用带类型提示的项目入口，便于补全、跳转和维护。
 
-## 基础 API
+## 快速开始
+
+1. 将 `addons/gdframe/` 复制到 Godot 项目的 `addons/` 下，在「项目 → 项目设置 → 插件」启用 GDFrame。
+2. 打开编辑器底部的「GDFrame」。插件会创建 `res://gdframe_project/gdframe.tscn` 并注册 `GDFrame` Autoload。将这个场景和 `project.godot` 一起纳入版本控制。
+3. 在「UI 管理」输入 `main_menu` 并创建，得到注册好的 `ui_main_menu` 界面。在游戏入口脚本中预加载并打开它。
+
+```gdscript
+func _ready() -> void:
+	await GDFrame.ui.preload_ui(&"ui_main_menu")
+	GDFrame.ui.open(&"ui_main_menu")
+```
+
+可在场景根节点的检查器中设置默认图层、是否使用遮罩、是否参与导航。自己的界面可以通过 `GDFrame.ui.register_scene()` 注册，根节点脚本继承 `GDFrameUIBase`。
+
+## 游戏代码入口
 
 | 入口 | 用途 |
 | --- | --- |
-| `GDFrame.ui` | 显式注册、预加载、打开与关闭 UI，管理图层、遮罩和导航焦点 |
-| `GDFrame.input` | 识别键盘、鼠标、触屏和手柄，发出 `device_changed`，按设备调整光标与导航 |
-| `GDFrame.settings` | 显示模式、窗口尺寸、帧率、垂直同步与语言 |
-| `GDFrame.save` | 保存和恢复基础设置、扩展状态和项目数据，包含临时文件与备份恢复 |
-| `has_service(id)`、`get_service(id)`、`service_ids()` | 检查当前组合，取得实现或枚举已注册的服务 |
+| `GDFrame.ui` | 注册、预加载、打开与关闭界面，管理图层、遮罩和焦点 |
+| `GDFrame.input` | 识别键盘、鼠标、触屏和手柄，监听设备切换 |
+| `GDFrame.settings` | 读写显示模式、窗口尺寸、帧率上限、垂直同步和语言 |
+| `GDFrame.save` | 保存玩家档案、基础设置和扩展状态，支持中断保存后的恢复 |
+| `GDFrame.get_service(id)` | 获取已注册的扩展服务 |
 
-底部 **GDFrame Dock** 保留通用、扩展管理、UI 管理、设置项、更新五个页面。通用页直接配置 UI 图层数、键盘导航焦点、外部 IDE、本地化与档案；UI 页创建并显式注册场景；设置项页编辑新档案的字典默认值。扩展管理支持创建、启停、排序、删除、在线安装和更新。更新页选择 GitHub/Gitee 下载源及版本。修改模块后可点「生成项目类型入口」，生成项目自己的服务属性，保留类型提示。
+### 安装扩展
 
-在 `gdframe.tscn` 根节点的检查器中也可设置 UI 图层数和键盘导航焦点。界面场景的根节点脚本继承 `GDFrameUIBase`。在业务节点的检查器里将菜单场景赋给 `menu_scene`，这样选择性导出也会包含它。
+在「扩展管理 → 在线安装与更新」选择下载源并点击「检查更新」。安装所需扩展后，切到「已安装」启用。也可以从扩展仓库复制所需的 `addons/gdframe_<id>/` 目录，再回到 Dock 启用。可点击「生成项目类型入口」，为业务代码添加带类型提示的服务属性。[GDFrame 扩展仓库](https://github.com/ftyu3d/gdframe-ext)
 
-```gdscript
-@export var menu_scene: PackedScene
+### 打包游戏
 
-func _ready() -> void:
-	GDFrame.ui.register_scene(&"menu", menu_scene)
-	await GDFrame.ui.preload_ui(&"menu")
-	GDFrame.ui.open(&"menu")
-```
+导出时保持 GDFrame 插件启用。停用某个模块前，检查业务代码是否仍引用它的脚本或资源。选择性导出时，使用 `PackedScene` 等资源属性引用项目资产，并将仅由字符串路径加载的资源纳入导出预设。
 
-```gdscript
-func save_preferences() -> void:
-	GDFrame.settings.set_max_fps(60)
-	GDFrame.save.get_profile().data[&"game"] = {"chapter": 2}
-	var err := GDFrame.save.flush()
-	if not GDFrameResult.is_ok(err):
-		push_error("保存失败 %s" % err)
-```
-
-设置会在启动时恢复。桌面项目在启动画面结束后可调用 `GDFrame.settings.apply_startup_window()` 应用保存的窗口尺寸与模式。把游戏进度放在自己的档案键下，服务 ID 对应的键供服务序列化使用。
-
-## 模块契约与导出
-
-扩展入口约定为 `res://addons/gdframe_<id>/module.tres`。其中 `entry` 指向同目录的 `module.gd`，`dependencies` 显式列出运行时脚本和资源。入口脚本实现 `static func create_service(host: GDFrameRoot)`，返回一个 Node 或 RefCounted。核心按清单顺序创建服务，接管 Node 的生命周期。在 `host.services_ready` 回调里连接其他可选服务。服务可实现 `capture_state() -> Dictionary` 和 `restore_state(state: Dictionary)` 接入档案。核心不声明可选扩展的 API 或空实现。业务依赖完整实现时，可用 `GDFrame.get_service(&"pool") as GDFrameNodePool` 获得扩展的类型提示。
-
-游戏启动只读取场景引用的模块。导出时保持 GDFrame 插件启用，即使选择「导出所有资源」，过滤器也会跳过未选中的 `gdframe_<id>/module.tres` 所在扩展目录，并排除核心编辑器脚本。静态引用某个扩展类型的业务代码需要选择对应扩展。选择性导出时，项目自己的 UI、状态定义等资产可通过场景或资源的导出属性引用。仅在脚本中加载的资产需加入导出预设。
-
-插件内还附有可离线查阅的业务接入与扩展示例。[本地 API 指南](addons/gdframe/editor/README.md)
-
-## 构建与验证
-
-- Windows 运行 `tools/pack_release.bat`，macOS/Linux 运行 `bash tools/pack_release.sh`，得到 `dist/gdframe.zip`。
-- Dock 操作验证运行 `powershell -ExecutionPolicy Bypass -File tools/test_dock.ps1 -Godot <Godot可执行文件>`。
-- 将 gdframe-ext 放在同级目录后，运行 `powershell -ExecutionPolicy Bypass -File tools/test_composition.ps1 -Godot <Godot可执行文件>`。可用 `-Extensions` 指定其他检出位置。
-
-[MIT License](LICENSE)
+[使用指南与扩展开发](addons/gdframe/editor/README.md) · [MIT 许可证](LICENSE)

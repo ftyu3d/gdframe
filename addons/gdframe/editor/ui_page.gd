@@ -3,6 +3,41 @@ extends VBoxContainer
 
 const Names = preload("asset_name_util.gd")
 const UI_ROOT := "res://gdframe_project/ui"
+const DIM_SCENE_PATH := "res://gdframe_project/dim.tscn"
+const DIM_SCRIPT_PATH := "res://gdframe_project/dim.gd"
+const DIM_SCRIPT := """extends Control
+
+
+## 在共享遮罩显示前为当前 UI 选择效果。可在场景中添加更多遮罩节点。
+func on_dim_show(_ui_id: StringName) -> void:
+	pass
+
+
+func on_dim_hide() -> void:
+	pass
+"""
+const DIM_SCENE := """[gd_scene format=3]
+
+[ext_resource type="Script" path="%s" id="1"]
+
+[node name="dim" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.55)
+"""
 var _context: RefCounted
 var _name: LineEdit
 var _filter: LineEdit
@@ -24,12 +59,22 @@ func _ready() -> void:
 	_name.placeholder_text = "名称，如 main → ui_main"
 	_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	actions.add_child(_name)
-	_context.button(actions, "创建 UI", _create)
+	var create_button := _context.button(actions, "创建 UI", _create) as Button
+	create_button.disabled = true
+	_name.text_changed.connect(func(value: String):
+		create_button.disabled = not _is_valid_ui_name(value)
+	)
 	_context.button(actions, "刷新", refresh)
 	_filter = LineEdit.new()
 	_filter.placeholder_text = "筛选界面名称"
 	_filter.text_changed.connect(refresh.unbind(1))
-	add_child(_filter)
+	var filter_row := HBoxContainer.new()
+	add_child(filter_row)
+	_filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	filter_row.add_child(_filter)
+	_context.button(filter_row, "创建 / 打开遮罩", _open_dim)
+	_context.button(filter_row, "定位遮罩", _locate_dim)
+	_context.button(filter_row, "打开遮罩脚本", _open_dim_script)
 	_list = ItemList.new()
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list.item_selected.connect(_selected.unbind(1))
@@ -119,14 +164,76 @@ func _selected() -> void:
 			&"ui_nav_participates": _nav.button_pressed = value
 
 
+func _open_dim() -> void:
+	var root := _context.root() as Node
+	if root == null:
+		return
+	var scene := root.get("dim_scene") as PackedScene
+	if scene == null or scene.resource_path == "res://gdframe_project/ui/dim/dim.tscn":
+		if EditorInterface.is_playing_scene():
+			_context.report("请先停止运行游戏。")
+			return
+		if not FileAccess.file_exists(DIM_SCENE_PATH):
+			if not FileAccess.file_exists(DIM_SCRIPT_PATH) and not _context.write_file(DIM_SCRIPT_PATH, DIM_SCRIPT):
+				return
+			if not _context.write_file(DIM_SCENE_PATH, DIM_SCENE % DIM_SCRIPT_PATH):
+				return
+		scene = load(DIM_SCENE_PATH) as PackedScene
+		if scene == null or not _context.set_property(&"dim_scene", scene):
+			return
+		_context.scan()
+	EditorInterface.open_scene_from_path(scene.resource_path)
+
+
+func _find_dim_scene() -> PackedScene:
+	var scene := _context.read_property(&"dim_scene") as PackedScene
+	if scene == null and FileAccess.file_exists(DIM_SCENE_PATH):
+		scene = load(DIM_SCENE_PATH) as PackedScene
+	if scene == null:
+		_context.report("还没有遮罩场景，请先点击「创建 / 打开遮罩」。")
+	return scene
+
+
+func _locate_dim() -> void:
+	var scene := _find_dim_scene()
+	if scene != null:
+		_context.locate(scene.resource_path)
+
+
+func _open_dim_script() -> void:
+	var scene := _find_dim_scene()
+	if scene == null:
+		return
+	while scene != null:
+		var state := scene.get_state()
+		if state.get_node_count() == 0:
+			break
+		for index in state.get_node_property_count(0):
+			if state.get_node_property_name(0, index) != &"script":
+				continue
+			var script := state.get_node_property_value(0, index) as Script
+			if script == null:
+				_context.report("遮罩场景的根节点没有挂载脚本。")
+				return
+			EditorInterface.edit_script(script)
+			EditorInterface.set_main_screen_editor("Script")
+			return
+		scene = state.get_node_instance(0)
+	_context.report("遮罩场景的根节点没有挂载脚本。")
+
+
+func _is_valid_ui_name(value: String) -> bool:
+	return not Names.clean_alnum_underscore(value).trim_prefix("ui_").replace("_", "").is_empty()
+
+
 func _create() -> void:
 	if EditorInterface.is_playing_scene():
 		_context.report("请先停止运行游戏。")
 		return
-	var id := Names.normalize_ui_name(_name.text)
-	if id.is_empty() or id == "ui_":
+	if not _is_valid_ui_name(_name.text):
 		_context.report("请输入有效的 UI 名称。")
 		return
+	var id := Names.normalize_ui_name(_name.text)
 	var path := UI_ROOT.path_join(id).path_join(id + ".tscn")
 	if FileAccess.file_exists(path):
 		_context.report("该 UI 已存在。")

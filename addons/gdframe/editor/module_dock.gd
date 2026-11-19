@@ -233,7 +233,10 @@ func _build_row(path: String, active: bool, index: int, count: int) -> void:
 	panel.add_child(row)
 	var title := Label.new()
 	var id := path.get_base_dir().get_file().trim_prefix("gdframe_")
-	title.text = "%s · %s" % [module.resource_name if not module.resource_name.is_empty() else id, str(module.get_meta("version", ""))]
+	title.text = module.resource_name if not module.resource_name.is_empty() else id
+	var version := str(module.get_meta("version", ""))
+	if not version.is_empty():
+		title.text += " · " + version
 	title.tooltip_text = path
 	title.custom_minimum_size.x = 200
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL

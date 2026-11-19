@@ -121,7 +121,7 @@ func _rebuild_paths() -> void:
 
 func _new_default_profile() -> GDFrameProfileResource:
 	var prof: GDFrameProfileResource = GDFrameProfileResource.new()
-	prof.data = _host.profile_defaults.duplicate(true)
+	prof.data = _host.get_profile_defaults()
 	return prof
 
 
