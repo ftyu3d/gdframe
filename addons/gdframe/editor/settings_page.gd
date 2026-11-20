@@ -95,7 +95,7 @@ func refresh() -> void:
 	var basic: Dictionary = stored if stored is Dictionary else {}
 	var labels: Dictionary = _context.read_property(&"profile_setting_labels", {})
 	var display_mode: Variant = basic.get("display_mode", Settings.default_settings()["display_mode"])
-	_profile_choice("进入游戏后的显示模式", "display_mode", display_mode, DISPLAY_MODES, basic.has("display_mode"))
+	_profile_choice("显示模式", "display_mode", display_mode, DISPLAY_MODES, basic.has("display_mode"))
 	var locales := {"automatic": "跟随系统"}
 	var available := LocaleCsv.project_locales()
 	if available.is_empty():
